@@ -34,15 +34,14 @@ func shootTestCase(t *testing.T, routineID int, testcases []string, wait_ch *cha
 	// fmt.Println(CONNECTION_TYPE, HOST+":"+PORT)
 	addr, err := net.ResolveTCPAddr(CONNECTION_TYPE, HOST+":"+PORT)
 	conn, err := net.DialTCP(CONNECTION_TYPE, nil, addr)
-
-	if err != nil {
-		fmt.Println("Error while dialing server")
-		return
-	}
-
-	defer conn.Close()
-
 	for _, testcase := range testcases {
+
+		if err != nil {
+			fmt.Println("Error while dialing server")
+			return
+		}
+
+		defer conn.Close()
 
 		conn.Write([]byte(testcase))
 		got := make([]byte, 1024)
@@ -57,20 +56,28 @@ func shootTestCase(t *testing.T, routineID int, testcases []string, wait_ch *cha
 		response := string(got)
 		response = strings.TrimSpace(response)
 
+		// fmt.Println(response)
 		time.Sleep(1 * time.Second)
 
 	}
-
 	*wait_ch <- routineID
-
 }
 
 func Test1(t *testing.T) {
 
-	client_count := 1
+	client_count := 10
 
 	var testcases = []string{
 		"write siddhartha.txt 6\r\ngregre\r\n",
+		"write siddhartha1.txt 6\r\ngregre\r\n",
+		"write siddhartha.txt 6\r\ngregre\r\n",
+		// "read siddhartha.txt\r\n",
+		// "write siddhartha1.txt 6\r\ngregre\r\n",
 	}
+	//
+	// var answers = []string{
+	// 	"write siddhartha.txt 6\r\ngregre\r\n",
+	// }
+
 	fireTestCases(t, testcases, client_count)
 }
