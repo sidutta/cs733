@@ -1,8 +1,0 @@
-=============== Jan 21, 2016 (IST) ===============
-21:35:39.345362 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
-21:35:39.345917 db@open opening
-21:35:39.345997 journal@recovery F·1
-21:35:39.346229 journal@recovery recovering @12
-21:35:39.348274 memdb@flush created L0@15 N·449 S·3KiB "rit..txt,v2103":"sid..txt,v2248"
-21:35:39.349438 db@janitor F·4 G·0
-21:35:39.349460 db@open done T·3.529571ms
