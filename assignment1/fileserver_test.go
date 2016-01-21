@@ -226,8 +226,8 @@ func Test1(t *testing.T) {
 	// -----------------------------------------------------------------
 	testcases = []string{
 		// checking for bytes
-		"write siddhartha22.txt 8 5\r\n\xbd\xb2\x3d\xbc\x20\xe2\x8c\x98\r\n",
-		"read siddhartha22.txt\r\n",
+		"write siddhartha62.txt 8 5\r\n\xbd\xb2\x3d\xbc\x20\xe2\x8c\x98\r\n",
+		"read siddhartha62.txt\r\n",
 	}
 
 	shootTestCase_type7(t, 1, testcases, 1, verNoSet, 7)
@@ -650,7 +650,7 @@ func shootTestCase_type7(t *testing.T, routineID int, testcases []string, thread
 
 		if testcase[0] == 'r' {
 
-			if buf[20] != '\xbd' || buf[21] != '\xb2' || buf[22] != '\x3d' || buf[23] != '\xbc' || buf[24] != '\x20' || buf[25] != '\xe2' || buf[26] != '\x8c' || buf[27] != '\x98' {
+			if buf[bytes_read-10] != '\xbd' || buf[bytes_read-9] != '\xb2' || buf[bytes_read-8] != '\x3d' || buf[bytes_read-7] != '\xbc' || buf[bytes_read-6] != '\x20' || buf[bytes_read-5] != '\xe2' || buf[bytes_read-4] != '\x8c' || buf[bytes_read-3] != '\x98' {
 				log.Println("error: bytes dont match")
 			}
 

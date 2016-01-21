@@ -1,13 +1,8 @@
 =============== Jan 21, 2016 (IST) ===============
-21:26:35.055768 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
-21:26:35.056068 db@open opening
-21:26:35.056152 journal@recovery F·1
-21:26:35.056355 journal@recovery recovering @1558
-21:26:35.058249 memdb@flush created L0@1561 N·454 S·3KiB "rit..txt,v46014":"sid..txt,d46115"
-21:26:35.059409 db@janitor F·9 G·0
-21:26:35.059431 db@open done T·3.350073ms
-21:26:35.059540 table@compaction L0·1 -> L1·1 S·3KiB Q·46166
-21:26:35.062512 table@build created L1@1564 N·11 S·558B "rit..txt,v46014":"sid..txt,v46165"
-21:26:35.062707 table@compaction committed F-1 S-3KiB Ke·0 D·454 T·3.113436ms
-21:26:35.062822 table@remove removed @1561
-21:26:35.062963 table@remove removed @1560
+21:36:07.953842 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+21:36:07.954141 db@open opening
+21:36:07.954213 journal@recovery F·1
+21:36:07.954419 journal@recovery recovering @16
+21:36:07.956480 memdb@flush created L0@18 N·453 S·3KiB "rit..txt,v2553":"sid..txt,v2702"
+21:36:07.957636 db@janitor F·5 G·0
+21:36:07.957665 db@open done T·3.503976ms
