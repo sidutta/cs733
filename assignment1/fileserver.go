@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/goleveldb/leveldb"
+	"github.com/syndtr/goleveldb/leveldb"
 	"io"
 	"log"
 
