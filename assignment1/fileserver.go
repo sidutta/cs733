@@ -300,7 +300,7 @@ func request_handler(conn net.Conn, datadb *leveldb.DB, metadatadb *leveldb.DB) 
 		// This prevents a crash and gives time by which test process completely closes the connection
 		if bytes_read == 0 && len(leftover) == 0 {
 			if err != nil {
-				if netErr, ok := err.(net.Error); ok && !netErr.Timeout() {
+				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 					continue
 				} else {
 					log.Println("error occurred:", err)
