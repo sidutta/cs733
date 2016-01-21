@@ -1,8 +1,8 @@
-=============== Jan 19, 2016 (IST) ===============
-10:06:28.992061 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
-10:06:28.993281 db@open opening
-10:06:28.993566 journal@recovery F·1
-10:06:29.001320 journal@recovery recovering @561
-10:06:29.008232 memdb@flush created L0@564 N·200 S·1KiB "sid..txt,v669":"sid..txt,v562"
-10:06:29.017264 db@janitor F·8 G·0
-10:06:29.017845 db@open done T·24.533665ms
+=============== Jan 21, 2016 (IST) ===============
+18:45:18.628650 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+18:45:18.629431 db@open opening
+18:45:18.629526 journal@recovery F·1
+18:45:18.629741 journal@recovery recovering @1504
+18:45:18.631907 memdb@flush created L0@1507 N·451 S·3KiB "rit..txt,v39688":"sid..txt,d39789"
+18:45:18.633167 db@janitor F·8 G·0
+18:45:18.633196 db@open done T·3.74973ms

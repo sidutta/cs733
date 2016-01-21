@@ -12,7 +12,7 @@ import (
 // Simple serial check of getting and setting
 func TestTCPSimple(t *testing.T) {
 	go serverMain()
-	name := "hi2.txt"
+	name := "hi.txt"
 	contents := "bye"
 	exptime := 300000
 	conn, err := net.Dial("tcp", "localhost:8080")
@@ -41,7 +41,6 @@ func TestTCPSimple(t *testing.T) {
 	expect(t, arr[0], "CONTENTS")
 	expect(t, arr[1], fmt.Sprintf("%v", version)) // expect only accepts strings, convert int version to string
 	expect(t, arr[2], fmt.Sprintf("%v", len(contents)))
-	expect(t, arr[3], fmt.Sprintf("%v", exptime-1))
 	scanner.Scan()
 	expect(t, contents, scanner.Text())
 }
