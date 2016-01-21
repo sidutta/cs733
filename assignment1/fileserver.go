@@ -416,6 +416,7 @@ func request_handler(conn net.Conn, datadb *leveldb.DB, metadatadb *leveldb.DB) 
 				buf = append(buf, tmp[:i+1]...)
 				break
 			}
+			conn.SetReadDeadline(time.Now().Add(200 * time.Second))
 			bytes_read, err = conn.Read(tmp)
 			if err != nil {
 				if err != io.EOF {
