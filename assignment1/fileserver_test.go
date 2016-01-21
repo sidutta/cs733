@@ -1,8 +1,8 @@
 package main
 
 import (
-	"fmt"
 	"io"
+	"log"
 	"net"
 	"strconv"
 	"strings"
@@ -72,7 +72,7 @@ func fireTestCases(t *testing.T, testcases []string, client_count int, verNoSet 
 			go shootTestCase_type1(t, i+1, testcases, &wait_ch, i, verNoSet, kind)
 		}
 	} else if kind == 2 {
-		fmt.Println("why here?")
+		log.Println("why here?")
 		// for i := 0; i < client_count; i++ {
 		// 			go shootTestCase_type2(t, i+1, testcases, &wait_ch, i, verNoSet)
 		// 		}
@@ -100,7 +100,7 @@ func fireTestCases(t *testing.T, testcases []string, client_count int, verNoSet 
 			routine_done := <-wait_ch
 			routine_done++
 			return_count++
-			// fmt.Println("return of", return_count)
+			// log.Println("return of", return_count)
 		}
 	}
 }
@@ -257,7 +257,7 @@ func shootTestCase_type1(t *testing.T, routineID int, testcases []string, wait_c
 	for _, testcase := range testcases {
 
 		if err != nil {
-			fmt.Println("Error while dialing server")
+			log.Println("Error while dialing server")
 			return
 		}
 
@@ -272,14 +272,14 @@ func shootTestCase_type1(t *testing.T, routineID int, testcases []string, wait_c
 		// time.Sleep(10 * time.Second)
 
 		bytes_read := 0
-		// fmt.Println("fwrfw")
+		// log.Println("fwrfw")
 		for bytes_read == 0 {
 			bytes_read, err = conn.Read(tmp)
 		}
 
 		if err != nil {
 			if err != io.EOF {
-				fmt.Println("read error: ", err)
+				log.Println("read error: ", err)
 			}
 			// TODO: return error
 		}
@@ -299,7 +299,7 @@ func shootTestCase_type1(t *testing.T, routineID int, testcases []string, wait_c
 
 		robserved := false
 		for {
-			// fmt.Println((tmp), bytes_read)
+			// log.Println((tmp), bytes_read)
 			for i := 0; i < bytes_read; i++ {
 				if i == 0 && tmp[i] == '\n' && robserved {
 					nrobserved++
@@ -323,7 +323,7 @@ func shootTestCase_type1(t *testing.T, routineID int, testcases []string, wait_c
 			bytes_read, err = conn.Read(tmp)
 			if err != nil {
 				if err != io.EOF {
-					fmt.Println("read error: ", err)
+					log.Println("read error: ", err)
 				}
 				break
 			}
@@ -343,22 +343,22 @@ func shootTestCase_type1(t *testing.T, routineID int, testcases []string, wait_c
 				ver, _ := strconv.Atoi(fields[1])
 
 				if verNoSet.Get(ver) != true {
-					fmt.Println("Error: Version not found despite insertion")
+					log.Println("Error: Version not found despite insertion")
 				}
 				expected_size := 100
 				if kind == 4 {
 					data := fields[4]
 					if data != "asdqweqwe" {
-						fmt.Println("rdwefwe")
+						log.Println("rdwefwe")
 					}
 					expected_size = 200
 				}
 				if verNoSet.Size() != expected_size {
-					fmt.Println("Error: Version number repeated or wrong no.. of insertions", "size:", verNoSet.Size())
+					log.Println("Error: Version number repeated or wrong no.. of insertions", "size:", verNoSet.Size())
 				}
 				latest_ver = verNoSet.GetVer()
 				if kind == 4 && latest_ver != ver {
-					fmt.Println("Error: Read doesnt correspond to latest addition", latest_ver, ver)
+					log.Println("Error: Read doesnt correspond to latest addition", latest_ver, ver)
 				}
 			}
 		}
@@ -374,7 +374,7 @@ func shootTestCase_type2(t *testing.T, routineID int, testcases []string, answer
 	addr, err := net.ResolveTCPAddr(CONNECTION_TYPE, HOST+":"+PORT)
 	conn, err := net.DialTCP(CONNECTION_TYPE, nil, addr)
 	if err != nil {
-		fmt.Println("Error while dialing server")
+		log.Println("Error while dialing server")
 		return
 	}
 
@@ -395,7 +395,7 @@ func shootTestCase_type2(t *testing.T, routineID int, testcases []string, answer
 
 		if err != nil {
 			if err != io.EOF {
-				fmt.Println("read error: ", err)
+				log.Println("read error: ", err)
 			}
 			// TODO: return error
 		}
@@ -433,11 +433,11 @@ func shootTestCase_type2(t *testing.T, routineID int, testcases []string, answer
 			if nrobserved == nrexpected {
 				break
 			}
-			fmt.Println("fwrfw", string(testcase))
+			log.Println("fwrfw", string(testcase))
 			bytes_read, err = conn.Read(tmp)
 			if err != nil {
 				if err != io.EOF {
-					fmt.Println("read error: ", err)
+					log.Println("read error: ", err)
 				}
 				break
 			}
@@ -451,12 +451,12 @@ func shootTestCase_type2(t *testing.T, routineID int, testcases []string, answer
 				fields := strings.Fields(ret)
 				data := fields[4]
 				if data != string(answers[ind]) {
-					fmt.Println("error", data, string(answers[ind]))
+					log.Println("error", data, string(answers[ind]))
 				}
 				exptime := fields[3]
 				exptime_int, _ := strconv.Atoi(exptime)
 				if exptime_int >= 10 {
-					fmt.Println("error: expiry time didn't decrease")
+					log.Println("error: expiry time didn't decrease")
 				}
 			}
 		} else if routineID != 2 {
@@ -466,21 +466,21 @@ func shootTestCase_type2(t *testing.T, routineID int, testcases []string, answer
 				fields := strings.Fields(ret)
 				data := fields[4]
 				if data != string(answers[ind]) {
-					fmt.Println("error", data, string(answers[ind]))
+					log.Println("error", data, string(answers[ind]))
 				}
 			} else if testcase[0] == 'd' {
 				ret := string(buf)
 				fields := strings.Fields(ret)
 				data := fields[0]
 				if data != string(answers[ind]) {
-					fmt.Println("error", data, string(answers[ind]))
+					log.Println("error", data, string(answers[ind]))
 				}
 			} else if testcase[0] == 'w' {
 				ret := string(buf)
 				fields := strings.Fields(ret)
 				data := fields[0]
 				if data != string(answers[ind]) {
-					fmt.Println("error", data, string(answers[ind]))
+					log.Println("error", data, string(answers[ind]))
 				}
 			}
 		} else {
@@ -489,7 +489,7 @@ func shootTestCase_type2(t *testing.T, routineID int, testcases []string, answer
 				fields := strings.Fields(ret)
 				data := fields[0]
 				if data != string(answers[ind]) {
-					fmt.Println("error", data, string(answers[ind]))
+					log.Println("error", data, string(answers[ind]))
 				}
 			}
 		}
@@ -503,7 +503,7 @@ func shootTestCase_type3(t *testing.T, routineID int, testcases []string, wait_c
 	for _, testcase := range testcases {
 
 		if err != nil {
-			fmt.Println("Error while dialing server")
+			log.Println("Error while dialing server")
 			return
 		}
 
@@ -519,14 +519,14 @@ func shootTestCase_type3(t *testing.T, routineID int, testcases []string, wait_c
 			// time.Sleep(10 * time.Second)
 
 			bytes_read := 0
-			// fmt.Println("fwrfw")
+			// log.Println("fwrfw")
 			for bytes_read == 0 {
 				bytes_read, err = conn.Read(tmp)
 			}
 
 			if err != nil {
 				if err != io.EOF {
-					fmt.Println("read error: ", err)
+					log.Println("read error: ", err)
 				}
 				// TODO: return error
 			}
@@ -563,7 +563,7 @@ func shootTestCase_type3(t *testing.T, routineID int, testcases []string, wait_c
 				bytes_read, err = conn.Read(tmp)
 				if err != nil {
 					if err != io.EOF {
-						fmt.Println("read error: ", err)
+						log.Println("read error: ", err)
 					}
 					break
 				}
@@ -584,7 +584,7 @@ func shootTestCase_type6(t *testing.T, routineID int, testcases []string, wait_c
 	for _, testcase := range testcases {
 
 		if err != nil {
-			fmt.Println("Error while dialing server")
+			log.Println("Error while dialing server")
 			return
 		}
 
@@ -603,7 +603,7 @@ func shootTestCase_type6(t *testing.T, routineID int, testcases []string, wait_c
 
 		if err != nil {
 			if err != io.EOF {
-				fmt.Println("read error: ", err)
+				log.Println("read error: ", err)
 			}
 			// TODO: return error
 		}
@@ -623,7 +623,7 @@ func shootTestCase_type7(t *testing.T, routineID int, testcases []string, thread
 	for _, testcase := range testcases {
 
 		if err != nil {
-			fmt.Println("Error while dialing server")
+			log.Println("Error while dialing server")
 			return
 		}
 
@@ -642,7 +642,7 @@ func shootTestCase_type7(t *testing.T, routineID int, testcases []string, thread
 
 		if err != nil {
 			if err != io.EOF {
-				fmt.Println("read error: ", err)
+				log.Println("read error: ", err)
 			}
 			// TODO: return error
 		}
@@ -651,7 +651,7 @@ func shootTestCase_type7(t *testing.T, routineID int, testcases []string, thread
 		if testcase[0] == 'r' {
 
 			if buf[20] != '\xbd' || buf[21] != '\xb2' || buf[22] != '\x3d' || buf[23] != '\xbc' || buf[24] != '\x20' || buf[25] != '\xe2' || buf[26] != '\x8c' || buf[27] != '\x98' {
-				fmt.Println("error: bytes dont match")
+				log.Println("error: bytes dont match")
 			}
 
 		} else if testcase[0] == 'w' {
@@ -659,7 +659,7 @@ func shootTestCase_type7(t *testing.T, routineID int, testcases []string, thread
 			fields := strings.Fields(ret)
 			data := fields[0]
 			if data != "OK" {
-				fmt.Println("error", data, "OK")
+				log.Println("error", data, "OK")
 			}
 		}
 

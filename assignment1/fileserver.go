@@ -2,9 +2,9 @@ package main
 
 import (
 	"./goleveldb/leveldb"
-	"fmt"
 	"io"
 	"log"
+
 	"net"
 	"strconv"
 	"strings"
@@ -56,7 +56,7 @@ func main() {
 
 func read_metadata(filename string, metadatadb *leveldb.DB) (version int, numbytes int, exptime time.Time, exp int, err error) {
 	data, err2 := metadatadb.Get([]byte(filename), nil)
-	// fmt.Println(data, filename, err2)
+	// log.Println(data, filename, err2)
 	err = err2
 	if err != nil {
 		version = 0
@@ -74,7 +74,7 @@ func read_metadata(filename string, metadatadb *leveldb.DB) (version int, numbyt
 			exptime, _ = time.Parse(layout, exptime_str)
 			exp, _ = strconv.Atoi(fields[6])
 		} else {
-			fmt.Println("why here?", string(data), string(filename))
+			log.Println("why here?", string(data), string(filename))
 		}
 	}
 	return
@@ -101,32 +101,32 @@ func write(conn net.Conn, input_bytes []byte, datadb *leveldb.DB, metadatadb *le
 	new_version := ""
 	if err == nil {
 		if err != nil {
-			fmt.Println("error in conversion: ", err)
+			log.Println("error in conversion: ", err)
 		}
 		saved_metadata := strconv.Itoa(prev_version_int+1) + " " + numbytes + " " + exptime + " " + exp
 		err = metadatadb.Put([]byte(filename), []byte(saved_metadata), nil)
 		if err != nil {
-			fmt.Println("failed to add to database: ", err)
+			log.Println("failed to add to database: ", err)
 		}
 		new_version = strconv.Itoa(prev_version_int + 1)
 	} else {
 		saved_metadata := strconv.Itoa(1) + " " + numbytes + " " + exptime + " " + exp
 		err = metadatadb.Put([]byte(filename), []byte(saved_metadata), nil)
 		if err != nil {
-			fmt.Println("failed to add to database: ", err)
+			log.Println("failed to add to database: ", err)
 		}
 		new_version = "1"
 	}
 	err = datadb.Put([]byte(filename), []byte(input_bytes[bytes_in_first_line:]), nil)
 	mutex.Unlock()
 	if err != nil {
-		fmt.Println("failed to add to database: ", err)
+		log.Println("failed to add to database: ", err)
 	}
 	response := "OK " + string(new_version) + "\r\n"
-	// fmt.Println(response)
+	// log.Println(response)
 	some_int, err := conn.Write([]byte(response))
 	if err != nil {
-		fmt.Println("failed to reply back: ", err, some_int)
+		log.Println("failed to reply back: ", err, some_int)
 	}
 }
 
@@ -147,7 +147,7 @@ func read(conn net.Conn, input_bytes []byte, datadb *leveldb.DB, metadatadb *lev
 			data, err2 := datadb.Get([]byte(filename), nil)
 			mutex.RUnlock()
 			if err2 != nil {
-				fmt.Println("error in conversion: ", err1)
+				log.Println("error in conversion: ", err1)
 			}
 			version_str := strconv.Itoa(version)
 			numbytes_str := strconv.Itoa(numbytes)
@@ -157,9 +157,9 @@ func read(conn net.Conn, input_bytes []byte, datadb *leveldb.DB, metadatadb *lev
 				exp_str = strconv.Itoa(int(exptime.Sub(time.Now()).Seconds()))
 			}
 			response := append([]byte("CONTENTS "+version_str+" "+numbytes_str+" "+exp_str+" \r\n"), data...)
-			// fmt.Println(response)
+			// log.Println(response)
 			conn.Write(response)
-			// fmt.Println(response)
+			// log.Println(response)
 		}
 	} else {
 		mutex.RUnlock()
@@ -198,7 +198,7 @@ func cas(conn net.Conn, input_bytes []byte, datadb *leveldb.DB, metadatadb *leve
 		req_version_int, _ := strconv.Atoi(req_version)
 
 		if err != nil {
-			fmt.Println("error in conversion: ", err)
+			log.Println("error in conversion: ", err)
 		}
 
 		if prev_version_int != req_version_int {
@@ -212,21 +212,21 @@ func cas(conn net.Conn, input_bytes []byte, datadb *leveldb.DB, metadatadb *leve
 			err = metadatadb.Put([]byte(filename), []byte(saved_metadata), nil)
 
 			if err != nil {
-				fmt.Println("failed to add to database: ", err)
+				log.Println("failed to add to database: ", err)
 			}
 			new_version = strconv.Itoa(prev_version_int + 1)
 
 			err = datadb.Put([]byte(filename), []byte(input_bytes[bytes_in_first_line:]), nil)
 			mutex.Unlock()
 			if err != nil {
-				fmt.Println("failed to add to database: ", err)
+				log.Println("failed to add to database: ", err)
 			}
 
 			response := "OK " + string(new_version) + "\r\n"
 			some_int, err := conn.Write([]byte(response))
 
 			if err != nil {
-				fmt.Println("failed to reply back: ", err, some_int)
+				log.Println("failed to reply back: ", err, some_int)
 			}
 		}
 	}
@@ -255,7 +255,7 @@ func delete(conn net.Conn, input_bytes []byte, datadb *leveldb.DB, metadatadb *l
 
 func reader(bytes_read *int, err *error, conn *net.Conn, tmp *[]byte, c chan int) {
 	*bytes_read, *err = (*conn).Read(*tmp)
-	fmt.Println("Fr")
+	log.Println("Fr")
 	c <- 0
 }
 func cutter(c chan int) {
@@ -275,7 +275,7 @@ func request_handler(conn net.Conn, datadb *leveldb.DB, metadatadb *leveldb.DB) 
 	for {
 		buf := make([]byte, 0, buffer_size)
 		tmp := make([]byte, 1024, buffer_size)
-		// fmt.Println("read error1")
+		// log.Println("read error1")
 
 		// var bytes_read int
 		// var err error
@@ -291,40 +291,40 @@ func request_handler(conn net.Conn, datadb *leveldb.DB, metadatadb *leveldb.DB) 
 		bytes_read, err := conn.Read(tmp)
 		if err != nil && err == io.EOF {
 			return
-			fmt.Println("read error22: ", err)
+			log.Println("read error22: ", err)
 		}
 
 		tmp = tmp[:bytes_read]
 
-		// fmt.Println("read error2")
+		// log.Println("read error2")
 		// This prevents a crash and gives time by which test process completely closes the connection
 		if bytes_read == 0 && len(leftover) == 0 {
 			if err != nil {
 				if netErr, ok := err.(net.Error); ok && !netErr.Timeout() {
 					continue
 				} else {
-					fmt.Println("error occurred:", err)
+					log.Println("error occurred:", err)
 				}
 			} else {
 				continue
 			}
 		}
-		// fmt.Println("defe", bytes_read, string(tmp), string(leftover))
+		// log.Println("defe", bytes_read, string(tmp), string(leftover))
 		command := ""
-		// fmt.Println("read error3")
+		// log.Println("read error3")
 		if err != nil {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 				// log.Println("read timeout:", err)
 				// time out
 			} else if err != io.EOF {
-				fmt.Println("read error1: ", err)
+				log.Println("read error1: ", err)
 			} else {
-				fmt.Println("read error2: ", err)
+				log.Println("read error2: ", err)
 				conn.Write(append([]byte("ERR_INTERNAL\r\n")))
 			}
 		}
 
-		// fmt.Println("read error4")
+		// log.Println("read error4")
 		leftover_bytes := 0
 
 		if len(leftover) != 0 {
@@ -419,7 +419,7 @@ func request_handler(conn net.Conn, datadb *leveldb.DB, metadatadb *leveldb.DB) 
 			bytes_read, err = conn.Read(tmp)
 			if err != nil {
 				if err != io.EOF {
-					fmt.Println("read error: ", err)
+					log.Println("read error: ", err)
 				}
 				break
 			}
@@ -430,7 +430,7 @@ func request_handler(conn net.Conn, datadb *leveldb.DB, metadatadb *leveldb.DB) 
 		switch command {
 
 		case "write":
-			// fmt.Println("here", string(buf))
+			// log.Println("here", string(buf))
 			write(conn, buf, datadb, metadatadb, bytes_in_first_line)
 		case "read":
 			read(conn, buf, datadb, metadatadb)
