@@ -223,7 +223,14 @@ func Test1(t *testing.T) {
 		routine_done++
 		return_count++
 	}
+	// -----------------------------------------------------------------
+	testcases = []string{
+		// checking for bytes
+		"write siddhartha22.txt 8 5\r\n\xbd\xb2\x3d\xbc\x20\xe2\x8c\x98\r\n",
+		"read siddhartha22.txt\r\n",
+	}
 
+	shootTestCase_type7(t, 1, testcases, 1, verNoSet, 7)
 	// -----------------------------------------------------------------
 	client_count = 1
 	// checking for a 5000 character write, most people may use a buffer upto 4096
@@ -606,5 +613,57 @@ func shootTestCase_type6(t *testing.T, routineID int, testcases []string, wait_c
 	if kind != 4 {
 		*wait_ch <- routineID
 	}
+	return
+}
+
+func shootTestCase_type7(t *testing.T, routineID int, testcases []string, thread_no int, verNoSet *IntSet, kind int) (latest_ver int) {
+	addr, err := net.ResolveTCPAddr(CONNECTION_TYPE, HOST+":"+PORT)
+	conn, err := net.DialTCP(CONNECTION_TYPE, nil, addr)
+
+	for _, testcase := range testcases {
+
+		if err != nil {
+			fmt.Println("Error while dialing server")
+			return
+		}
+
+		defer conn.Close()
+		conn.Write([]byte(testcase))
+
+		buffer_size := 1024
+
+		buf := make([]byte, 0, buffer_size)
+		tmp := make([]byte, buffer_size)
+
+		bytes_read := 0
+		for bytes_read == 0 {
+			bytes_read, err = conn.Read(tmp)
+		}
+
+		if err != nil {
+			if err != io.EOF {
+				fmt.Println("read error: ", err)
+			}
+			// TODO: return error
+		}
+		buf = append(buf, tmp[:bytes_read]...)
+
+		if testcase[0] == 'r' {
+
+			if buf[20] != '\xbd' || buf[21] != '\xb2' || buf[22] != '\x3d' || buf[23] != '\xbc' || buf[24] != '\x20' || buf[25] != '\xe2' || buf[26] != '\x8c' || buf[27] != '\x98' {
+				fmt.Println("error: bytes dont match")
+			}
+
+		} else if testcase[0] == 'w' {
+			ret := string(buf)
+			fields := strings.Fields(ret)
+			data := fields[0]
+			if data != "OK" {
+				fmt.Println("error", data, "OK")
+			}
+		}
+
+	}
+
 	return
 }
