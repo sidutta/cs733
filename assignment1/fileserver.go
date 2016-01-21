@@ -184,8 +184,7 @@ func cas(conn net.Conn, input_bytes []byte, datadb *leveldb.DB, metadatadb *leve
 		exp = inputs[4]
 		delay, _ := strconv.Atoi(exp)
 		exptime = time.Now().Add(time.Duration(delay) * time.Second).String()
-		dot_pos := strings.Index(exptime, ".")
-		exptime = exptime[:dot_pos]
+
 	}
 	mutex.Lock()
 	prev_version_int, _, _, _, err := read_metadata(filename, metadatadb)
@@ -204,6 +203,7 @@ func cas(conn net.Conn, input_bytes []byte, datadb *leveldb.DB, metadatadb *leve
 		if prev_version_int != req_version_int {
 			prev_version_str := strconv.Itoa(prev_version_int)
 			conn.Write([]byte("ERR_VERSION " + prev_version_str + "\r\n"))
+			mutex.Unlock()
 		} else {
 
 			new_version := ""
