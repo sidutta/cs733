@@ -1,6 +1,7 @@
 package main
 
 import (
+	// "log"
 	"math/rand"
 	"sort"
 	"sync"
@@ -146,19 +147,19 @@ func (sm *StateMachine) getLogTerm(i int) int {
 }
 
 func min(x int, y int) int {
-	if x < y {
-		return x
-	} else {
-		return y
+	var c int
+	if c = y; c > x {
+		c = x
 	}
+	return c
 }
 
 func max(x int, y int) int {
-	if x > y {
-		return x
-	} else {
-		return y
+	var c int
+	if c = y; c < x {
+		c = x
 	}
+	return c
 }
 
 func (sm *StateMachine) VoteReq(msg VoteReq) {

@@ -361,8 +361,6 @@ func appendEntriesReqtoCandidate(t *testing.T) {
 	res = <-testserver.actionCh
 	errorCheck(t, "Alarm", reflect.TypeOf(res).Name(), "17")
 
-	// LogStore(testserver, res.(Send).event.(AppendEntriesResp).MatchIndex, entry LogEntry)
-
 }
 
 func voteReq(t *testing.T) {
@@ -574,12 +572,18 @@ func appendEntriesResponse(t *testing.T) {
 	testserver.CurrentTerm = 4
 	testserver.VotedFor = 1
 	testserver.NextIndex[2] = 1
+	testserver.MatchIndex[2] = 1
+	testserver.MatchIndex[3] = 1
+	testserver.MatchIndex[4] = 1
+	testserver.MatchIndex[5] = 1
 	datum = []byte{'b', 'b', 'c', 's'}
-	logentry = LogEntry{datum, 3}
+	logentry = LogEntry{datum, 4}
+	var logentries2 []LogEntry
+
 	for i := 0; i < 5; i++ {
-		logentries = append(logentries, logentry)
+		logentries2 = append(logentries2, logentry)
 	}
-	testserver.Log = logentries
+	testserver.Log = logentries2
 
 	testserver.netCh <- AppendEntriesResp{2, 4, 2, true}
 	testserver.ProcessEvent()
@@ -587,5 +591,6 @@ func appendEntriesResponse(t *testing.T) {
 	res = <-testserver.actionCh
 	errorCheck(t, "Send", reflect.TypeOf(res).Name(), "20")
 	errorCheck(t, "2", strconv.Itoa(res.(Send).event.(AppendEntriesReq).PrevLogIndex), "20")
+	errorCheck(t, "1", strconv.Itoa(testserver.CommitIndex), "20")
 
 }
