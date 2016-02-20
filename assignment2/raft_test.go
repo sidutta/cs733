@@ -291,30 +291,23 @@ func appendEntriesReqtoFollower(t *testing.T) {
 	errorCheck(t, "Alarm", reflect.TypeOf(res).Name(), "17")
 
 	// leader with equal term
-	// testserver.State = "follower"
-	// testserver.CurrentTerm = 3
-	// logentries = make([]LogEntry, 1)
-	// logentry = LogEntry{[]byte{'a', 'b', 'c', 'd'}, 6}
-	// logentries[0] = logentry
-	// testserver.netCh <- AppendEntriesReq{6, 2, -1, -1, logentries, -1}
-	// testserver.ProcessEvent()
-	// errorCheck(t, "follower", testserver.State, "state didn't change")
-	// res = <-testserver.actionCh
-	// errorCheck(t, "LogStore", reflect.TypeOf(res).Name(), "18")
-	// errorCheck(t, "0", strconv.Itoa(res.(LogStore).index), "18")
-	// errorCheck(t, "abcd", string(res.(LogStore).data[:len(res.(LogStore).data)]), "18")
-	// res = <-testserver.actionCh
-	// errorCheck(t, "Send", reflect.TypeOf(res).Name(), "17")
-	// errorCheck(t, "AppendEntriesResp", reflect.TypeOf(res.(Send).event).Name(), "18")
-	// errorCheck(t, "6", strconv.Itoa(res.(Send).event.(AppendEntriesResp).Term), "18")
-	// errorCheck(t, "true", strconv.FormatBool(res.(Send).event.(AppendEntriesResp).Success), "18")
-	// errorCheck(t, "1", strconv.Itoa(res.(Send).event.(AppendEntriesResp).From), "18")
-	// errorCheck(t, "0", strconv.Itoa(res.(Send).event.(AppendEntriesResp).MatchIndex), "18")
-	// res = <-testserver.actionCh
-	// errorCheck(t, "Alarm", reflect.TypeOf(res).Name(), "17")
-
-	// res = <-testserver.actionCh
-	//errorCheck(t, "Alarm", reflect.TypeOf(res).Name(), "17")
+	testserver.State = "follower"
+	testserver.CurrentTerm = 8
+	logentries = make([]LogEntry, 1)
+	logentry = LogEntry{[]byte{'a', 'b', 'c', 'd'}, 6}
+	logentries[0] = logentry
+	testserver.netCh <- AppendEntriesReq{8, 2, 3, -1, logentries, -1}
+	testserver.ProcessEvent()
+	errorCheck(t, "follower", testserver.State, "state didn't change")
+	res = <-testserver.actionCh
+	errorCheck(t, "Send", reflect.TypeOf(res).Name(), "17")
+	errorCheck(t, "AppendEntriesResp", reflect.TypeOf(res.(Send).event).Name(), "18")
+	errorCheck(t, "8", strconv.Itoa(res.(Send).event.(AppendEntriesResp).Term), "18")
+	errorCheck(t, "false", strconv.FormatBool(res.(Send).event.(AppendEntriesResp).Success), "18")
+	errorCheck(t, "1", strconv.Itoa(res.(Send).event.(AppendEntriesResp).From), "18")
+	errorCheck(t, "-1", strconv.Itoa(res.(Send).event.(AppendEntriesResp).MatchIndex), "18")
+	res = <-testserver.actionCh
+	errorCheck(t, "Alarm", reflect.TypeOf(res).Name(), "17")
 
 }
 
