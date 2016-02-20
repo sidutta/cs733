@@ -1,21 +1,54 @@
 package main
 
 import (
-	"fmt"
+	// "log"
+	"math/rand"
 	"sync"
 	"time"
-	"reflect"
 )
 
-type LogEntry struct {
-	Data      []byte
-	Committed bool
-	Term      int
-	LogIndex  int
+type Alarm struct {
+	//sender int
+	delay float64 // delay in milliseconds
 }
 
-type AppendMsg struct {
+type Send struct {
+	//sender int
+	peerID int // server to send to
+	event  interface{}
+}
+
+type Commit struct {
+	//sender int
+	index int
+	data  LogEntry
+	err   string
+}
+
+type LogStore struct {
+	//sender  int
+	index int
+	data  []byte
+}
+
+type AppendEntry struct {
+	command []byte
+}
+
+type Timeout struct {
+}
+
+type SaveTerm struct {
+	Term int
+}
+
+type SaveVotedFor struct {
+	VotedFor int
+}
+
+type LogEntry struct {
 	Data []byte
+	Term int
 }
 
 type AppendEntriesReq struct {
@@ -24,7 +57,7 @@ type AppendEntriesReq struct {
 	PrevLogIndex int
 	PrevLogTerm  int
 	Entries      []LogEntry
-	LeaderCommit int
+	CommitIndex  int
 }
 
 type AppendEntriesResp struct {
@@ -35,7 +68,6 @@ type AppendEntriesResp struct {
 }
 
 type VoteReq struct {
-	From         int
 	Term         int
 	CandidateId  int
 	LastLogIndex int
@@ -43,114 +75,309 @@ type VoteReq struct {
 }
 
 type VoteResp struct {
-	From        int
+	ServerID    int
 	Term        int
 	VoteGranted bool
 }
 
 type StateMachine struct {
-	CurrentTerm int
-	LeaderID    int
-	ServerID    int
-	State       string
-	VoteGranted map[int]bool
-	VotedFor    int
-	NextIndex   map[int]int
-	MatchIndex  map[int]int
-	CommitIndex int
-	Log         []LogEntry
-	clientCh    chan interface{}
-	netCh       chan interface{}
-	actionCh    chan interface{}
-	Timer       *time.Timer
-	Mutex       sync.RWMutex
-	PeerChan	chan interface{}
+	CurrentTerm  int
+	LastLogIndex int
+	LastLogTerm  int
+	LeaderID     int
+	ServerID     int
+	State        string
+	VoteGranted  map[int]bool
+	VotedFor     int
+	NextIndex    map[int]int
+	MatchIndex   map[int]int
+	Log          []LogEntry
+	updateCh     chan interface{}
+	netCh        chan interface{}
+	actionCh     chan interface{}
+	Timer        *time.Timer
+	Mutex        sync.RWMutex
+	PeerIds      []int
+	CommitIndex  int
 }
 
-func (sm *StateMachine) doVoteReq() {
-	switch sm.State {
-		case "follower":
-			if sm.CurrentTerm < msg.term:
-				sm.CurrentTerm = msg.term
-				sm.votedFor = nil
-				# increment election alarm?
-			if sm.CurrentTerm == msg.term && 
-				(sm.votedFor == nil or sm.votedFor == msg.candidateId):
-				if (msg.lastLogTerm > sm.logTerm[-1] or 
-					(msg.lastLogTerm == sm.logTerm[-1] and 
-						msg.lastLogIndex >= len(sm.log))):
-					sm.CurrentTerm = msg.term
-					sm.votedFor = msg.candidateId
-					action = Send(msg.from, VoteResp(sm.CurrentTerm, voteGranted=yes))
-			else: #reject vote:
-				action = Send(msg.from, VoteResp(sm.CurrentTerm, voteGranted=no))
+const HEARTBEAT_TIMEOUT = 50
+const ELECTION_TIMEOUT = 150
+const NUMBER_OF_NODES = 5
 
-			Alarm(time.now() + rand(1.0, 2.0) * ELECTION_TIMEOUT)
-					
-		case "candidate":
-			
-		case "leader":
+func NewStateMachine(id int) *StateMachine {
+	sm := StateMachine{
+		ServerID:     id,
+		State:        "follower",
+		VoteGranted:  make(map[int]bool),
+		NextIndex:    make(map[int]int),
+		MatchIndex:   make(map[int]int),
+		updateCh:     make(chan interface{}, 10),
+		netCh:        make(chan interface{}, 10),
+		actionCh:     make(chan interface{}, 10),
+		LastLogIndex: -1,
+		CommitIndex:  -1,
+		// Timer:        e,
+	}
+	return &sm
+}
+
+func (sm *StateMachine) AddPeer(id int) {
+	sm.PeerIds = append(sm.PeerIds, id)
+}
+
+func aggregate(VoteGranted map[int]bool) int {
+	total := 0
+	for _, vote := range VoteGranted {
+		if vote {
+			total = total + 1
+		}
+	}
+	return total
+}
+
+func (sm *StateMachine) getLogTerm(i int) int {
+	if i >= 0 {
+		return sm.Log[i].Term
+	} else {
+		return -1
+	}
+
+}
+
+func min(x int, y int) int {
+	if x < y {
+		return x
+	} else {
+		return y
+	}
+}
+
+func max(x int, y int) int {
+	if x > y {
+		return x
+	} else {
+		return y
+	}
+}
+
+func (sm *StateMachine) VoteReq(msg VoteReq) {
+
+	if sm.CurrentTerm < msg.Term {
+		sm.State = "follower"
+		sm.CurrentTerm = msg.Term
+		sm.VotedFor = 0
+		// sm.updateCh <- SaveVotedFor{sm.VotedFor}
+		sm.actionCh <- Alarm{delay: (1.0 + rand.Float64()) * ELECTION_TIMEOUT}
+	}
+
+	switch sm.State {
+	case "follower", "candidate", "leader":
+		if sm.CurrentTerm == msg.Term && (sm.VotedFor == 0 || sm.VotedFor == msg.CandidateId) && (msg.LastLogTerm > sm.getLogTerm(len(sm.Log)-1) || (msg.LastLogTerm == sm.getLogTerm(len(sm.Log)-1) && msg.LastLogIndex >= len(sm.Log)-1)) {
+			sm.CurrentTerm = msg.Term
+			sm.VotedFor = msg.CandidateId
+			// sm.updateCh <- SaveVotedFor{sm.VotedFor}
+			sm.actionCh <- Send{msg.CandidateId, VoteResp{sm.ServerID, sm.CurrentTerm, true}}
+			sm.actionCh <- Alarm{delay: (1.0 + rand.Float64()) * ELECTION_TIMEOUT}
+
+		} else {
+			sm.actionCh <- Send{msg.CandidateId, VoteResp{sm.ServerID, sm.CurrentTerm, false}}
+		}
+
+	}
+
+}
+
+func (sm *StateMachine) ProcessEvent() {
+	// for {
+	// var ev interface{}
+	select {
+	case ev := <-sm.netCh:
+		switch ev.(type) {
+		case VoteReq:
+			sm.VoteReq(ev.(VoteReq))
+		case VoteResp:
+			sm.VoteResp(ev.(VoteResp))
+		case AppendEntriesReq:
+			sm.AppendEntriesReq(ev.(AppendEntriesReq))
+		case AppendEntriesResp:
+			sm.AppendEntriesResp(ev.(AppendEntriesResp))
+		case AppendEntry:
+			sm.Append(ev.(AppendEntry))
+		case Timeout:
+			sm.Timeout()
+		}
+	}
+	// }
+}
+
+func (sm *StateMachine) VoteResp(msg VoteResp) {
+	if sm.CurrentTerm < msg.Term {
+		sm.State = "follower"
+		sm.CurrentTerm = msg.Term
+		sm.VotedFor = 0
+		// sm.updateCh <- SaveVotedFor{sm.VotedFor}
+
+	}
+	switch sm.State {
+
+	case "follower":
+
+	case "candidate":
+
+		if sm.CurrentTerm == msg.Term {
+			sm.VoteGranted[msg.ServerID] = msg.VoteGranted
+			if aggregate(sm.VoteGranted) > NUMBER_OF_NODES/2 {
+				sm.State = "leader"
+				sm.LeaderID = sm.ServerID
+				for _, peerId := range sm.PeerIds {
+					if peerId != sm.ServerID {
+						sm.NextIndex[peerId] = len(sm.Log)
+						sm.MatchIndex[peerId] = -1
+
+						sm.actionCh <- Send{peerId, AppendEntriesReq{sm.CurrentTerm, sm.ServerID, sm.LastLogIndex, sm.LastLogTerm, nil, sm.CommitIndex}}
+					}
+				}
+				sm.actionCh <- Alarm{delay: (1.0 + rand.Float64()) * HEARTBEAT_TIMEOUT}
+			}
+		}
+	case "leader":
 
 	}
 }
 
-func (sm *StateMachine) eventLoop() {
-	for {
-		select {
-		case appendMsg := <- sm.clientCh:
-			t := reflect.TypeOf(appendMsg)
-			fmt.Println(t)
+func (sm *StateMachine) AppendEntriesReq(msg AppendEntriesReq) {
+	if sm.CurrentTerm < msg.Term {
+		sm.State = "follower"
+		sm.CurrentTerm = msg.Term
+		sm.VotedFor = 0
+		// sm.updateCh <- SaveVotedFor{sm.VotedFor}
 
-		case peerMsg := <- sm.netCh:
-			t := reflect.TypeOf(peerMsg)
-			switch t.Name() {
-				case "AppendEntriesReq":
-					go sm.doAppendEntriesReq()
-				case "AppendEntriesResp":
-					go sm.doAppendEntriesResp()
-				case "VoteResp": 
-					go sm.doVoteResp()
-				case "VoteReq":
-					go sm.doVoteReq()
+		sm.actionCh <- Alarm{delay: (1.0 + rand.Float64()) * ELECTION_TIMEOUT}
+	}
+	switch sm.State {
+	case "follower", "candidate", "leader":
+		if sm.CurrentTerm > msg.Term {
+			sm.actionCh <- Send{msg.LeaderId, AppendEntriesResp{sm.ServerID, sm.CurrentTerm, -1, false}}
+		} else {
+			sm.LeaderID = msg.LeaderId
+			sm.State = "follower"
+			success := (msg.PrevLogIndex == -1 || (msg.PrevLogIndex <= len(sm.Log)-1 && sm.getLogTerm(msg.PrevLogIndex) == msg.PrevLogTerm))
+			index := -1
+			if success {
+				index = msg.PrevLogIndex
+				for j := 0; j < len(msg.Entries); j++ {
+					index++
+					sm.actionCh <- LogStore{index, msg.Entries[j].Data}
+				}
+				sm.LastLogIndex = index
+				sm.LastLogTerm = sm.CurrentTerm
+				sm.CommitIndex = min(msg.CommitIndex, index)
+			} else {
+				index = -1
+			}
+			sm.actionCh <- Send{msg.LeaderId, AppendEntriesResp{sm.ServerID, sm.CurrentTerm, index, success}}
+			sm.actionCh <- Alarm{delay: (1.0 + rand.Float64()) * ELECTION_TIMEOUT}
+		}
+
+	}
+}
+
+func (sm *StateMachine) AppendEntriesResp(msg AppendEntriesResp) {
+	if sm.CurrentTerm < msg.Term {
+		sm.State = "follower"
+		sm.CurrentTerm = msg.Term
+		sm.VotedFor = 0
+		// sm.updateCh <- SaveVotedFor{sm.VotedFor}
+
+		sm.actionCh <- Alarm{delay: (1.0 + rand.Float64()) * ELECTION_TIMEOUT}
+	}
+	switch sm.State {
+	case "follower", "candidate":
+
+	case "leader":
+		if sm.CurrentTerm == msg.Term {
+			if msg.Success {
+				sm.MatchIndex[msg.From] = msg.MatchIndex
+				sm.NextIndex[msg.From] = msg.MatchIndex + 1
+				if sm.MatchIndex[msg.From] < len(sm.Log)-1 {
+					sm.actionCh <- Send{msg.From, AppendEntriesReq{sm.CurrentTerm, sm.ServerID, sm.MatchIndex[msg.From], sm.getLogTerm(sm.MatchIndex[msg.From]), sm.Log[sm.NextIndex[msg.From]:len(sm.Log)], sm.CommitIndex}}
+				}
+
+				cnt := 1 //TODO 0 or 1
+				for _, peerID := range sm.PeerIds {
+					if peerID != sm.ServerID && sm.MatchIndex[peerID] > sm.CommitIndex {
+						cnt += 1 // TODO could be increased greater
+					}
+				}
+				if cnt > NUMBER_OF_NODES/2 {
+					sm.CommitIndex++
+					// Commit(index, data, err)
+				}
+			} else {
+				sm.NextIndex[msg.From] = max(0, sm.NextIndex[msg.From]-1)
+				sm.actionCh <- Send{msg.From, AppendEntriesReq{sm.CurrentTerm, sm.ServerID, sm.NextIndex[msg.From] - 1, sm.getLogTerm(sm.NextIndex[msg.From] - 1), sm.Log[sm.NextIndex[msg.From] : sm.LastLogIndex+1], sm.CommitIndex}}
 			}
 		}
 	}
 }
 
-func NewStateMachine() *StateMachine {
-	sm := StateMachine{
-		VoteGranted: make(map[int]bool),
-		NextIndex:   make(map[int]int),
-		MatchIndex:  make(map[int]int),
-		clientCh:       make(chan interface{}),
-		netCh:       make(chan interface{}),
-		actionCh:       make(chan interface{}),
+func (sm *StateMachine) Append(msg AppendEntry) {
+	switch sm.State {
+	case "follower":
+		sm.actionCh <- Send{sm.LeaderID, msg}
+	case "candidate":
+		sm.actionCh <- Send{sm.LeaderID, msg}
+	case "leader":
+		sm.LastLogIndex++
+		sm.LastLogTerm = sm.CurrentTerm
+		sm.actionCh <- LogStore{len(sm.Log), msg.command}
 	}
-	return &sm
 }
 
-func () {
+func (sm *StateMachine) Timeout() {
+	switch sm.State {
+	case "follower":
+		sm.State = "candidate"
+		sm.CurrentTerm++
+		sm.updateCh <- SaveTerm{sm.CurrentTerm}
+		sm.VotedFor = sm.ServerID
+		// sm.updateCh <- SaveVotedFor{sm.VotedFor}
 
+		sm.VoteGranted[sm.ServerID] = true
+		for _, peerID := range sm.PeerIds {
+			if peerID != sm.ServerID {
+				sm.VoteGranted[sm.ServerID] = false
+				sm.actionCh <- Send{peerID, VoteReq{sm.CurrentTerm, sm.ServerID, sm.LastLogIndex, sm.LastLogTerm}}
+			}
+		}
+		sm.actionCh <- Alarm{delay: (1.0 + rand.Float64()) * ELECTION_TIMEOUT}
+
+	case "candidate":
+		sm.CurrentTerm++
+		sm.updateCh <- SaveTerm{sm.CurrentTerm}
+		sm.VotedFor = sm.ServerID
+		// sm.updateCh <- SaveVotedFor{sm.VotedFor}
+
+		sm.VoteGranted[sm.ServerID] = true
+		for _, peerID := range sm.PeerIds {
+			if peerID != sm.ServerID {
+				sm.VoteGranted[sm.ServerID] = false
+				sm.actionCh <- Send{peerID, VoteReq{sm.CurrentTerm, sm.ServerID, sm.LastLogIndex, sm.LastLogTerm}}
+			}
+		}
+		sm.actionCh <- Alarm{delay: (1.0 + rand.Float64()) * ELECTION_TIMEOUT}
+
+	case "leader":
+		for _, peerID := range sm.PeerIds {
+			if peerID != sm.ServerID {
+				sm.actionCh <- Send{peerID, AppendEntriesReq{sm.CurrentTerm, sm.ServerID, sm.LastLogIndex, sm.LastLogTerm, nil, sm.CommitIndex}}
+			}
+		}
+		sm.actionCh <- Alarm{delay: (1.0 + rand.Float64()) * HEARTBEAT_TIMEOUT}
+
+	}
 }
 
 func main() {
-	sm1 := NewStateMachine()
-	go sm1.eventLoop()
-
-	sm2 := NewStateMachine()
-	go sm2.eventLoop()
-
-	sm1.PeerChan = sm2.netCh
-	sm2.PeerChan = sm1.netCh
-
-	vr := VoteResp{From: 1, Term: 2, VoteGranted: true}
-
-	sm2.netCh <- vr
-	sm1.PeerChan <- vr
-	time.Sleep(10*time.Second)
-	// go func() {
-	// 	vR := <-sm.netCh
-	// 	fmt.Println(vR)
-	// }()
-	// sm.netCh <- vr
 }
