@@ -48,6 +48,7 @@ func Test1(t *testing.T) {
 	clientToCandidate(t)
 	clientToLeader(t)
 	voteReq(t)
+	appendEntriesResponse(t)
 }
 
 func clientToFollower(t *testing.T) {
@@ -511,5 +512,80 @@ func voteReq(t *testing.T) {
 
 	res = <-testserver.actionCh
 	errorCheck(t, "false", strconv.FormatBool(res.(Send).event.(VoteResp).VoteGranted), "19")
+
+}
+
+//
+// Type AppendEntriesResp struct {
+// 	From       int
+// 		Term       int
+// 			MatchIndex int
+// 				Success    bool
+// 			}
+
+// type AppendEntriesReq struct {
+// 	Term         int
+// 	LeaderId     int
+// 	PrevLogIndex int
+// 	PrevLogTerm  int
+// 	Entries      []LogEntry
+// 	CommitIndex  int
+// }
+
+func appendEntriesResponse(t *testing.T) {
+	// candidate 1 converts to follower because of higher term of approaching candidate 2
+	// must grant the vote
+	var testserver *StateMachine
+	testserver = NewStateMachine(1)
+	initialize(testserver)
+	testserver.State = "leader"
+	testserver.CurrentTerm = 2
+	testserver.VotedFor = 1
+	testserver.netCh <- AppendEntriesResp{2, 4, 15, false}
+	testserver.ProcessEvent()
+	res := <-testserver.actionCh
+	errorCheck(t, "Alarm", reflect.TypeOf(res).Name(), "20")
+	errorCheck(t, "follower", testserver.State, "20")
+
+	testserver = NewStateMachine(1)
+	initialize(testserver)
+	testserver.State = "leader"
+	testserver.CurrentTerm = 4
+	testserver.VotedFor = 1
+	testserver.NextIndex[2] = 1
+	datum := []byte{'b', 'b', 'c', 's'}
+	var logentries []LogEntry
+	logentry := LogEntry{datum, 3}
+	for i := 0; i < 5; i++ {
+		logentries = append(logentries, logentry)
+	}
+	testserver.Log = logentries
+
+	testserver.netCh <- AppendEntriesResp{2, 4, 15, false}
+	testserver.ProcessEvent()
+
+	res = <-testserver.actionCh
+	errorCheck(t, "Send", reflect.TypeOf(res).Name(), "20")
+	errorCheck(t, "-1", strconv.Itoa(res.(Send).event.(AppendEntriesReq).PrevLogIndex), "20")
+
+	testserver = NewStateMachine(1)
+	initialize(testserver)
+	testserver.State = "leader"
+	testserver.CurrentTerm = 4
+	testserver.VotedFor = 1
+	testserver.NextIndex[2] = 1
+	datum = []byte{'b', 'b', 'c', 's'}
+	logentry = LogEntry{datum, 3}
+	for i := 0; i < 5; i++ {
+		logentries = append(logentries, logentry)
+	}
+	testserver.Log = logentries
+
+	testserver.netCh <- AppendEntriesResp{2, 4, 2, true}
+	testserver.ProcessEvent()
+
+	res = <-testserver.actionCh
+	errorCheck(t, "Send", reflect.TypeOf(res).Name(), "20")
+	errorCheck(t, "2", strconv.Itoa(res.(Send).event.(AppendEntriesReq).PrevLogIndex), "20")
 
 }

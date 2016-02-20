@@ -1,8 +1,8 @@
 package main
 
 import (
-	// "log"
 	"math/rand"
+	"sort"
 	"sync"
 	"time"
 )
@@ -292,31 +292,32 @@ func (sm *StateMachine) AppendEntriesResp(msg AppendEntriesResp) {
 
 		sm.actionCh <- Alarm{delay: (1.0 + rand.Float64()) * ELECTION_TIMEOUT}
 	}
+
 	switch sm.State {
 	case "follower", "candidate":
 
 	case "leader":
 		if sm.CurrentTerm == msg.Term {
-			if msg.Success {
+			if !msg.Success {
+				sm.NextIndex[msg.From] = max(0, sm.NextIndex[msg.From]-1)
+				sm.actionCh <- Send{msg.From, AppendEntriesReq{sm.CurrentTerm, sm.ServerID, sm.NextIndex[msg.From] - 1, sm.getLogTerm(sm.NextIndex[msg.From] - 1), sm.Log[sm.NextIndex[msg.From] : sm.LastLogIndex+1], sm.CommitIndex}}
+			} else {
 				sm.MatchIndex[msg.From] = msg.MatchIndex
 				sm.NextIndex[msg.From] = msg.MatchIndex + 1
 				if sm.MatchIndex[msg.From] < len(sm.Log)-1 {
 					sm.actionCh <- Send{msg.From, AppendEntriesReq{sm.CurrentTerm, sm.ServerID, sm.MatchIndex[msg.From], sm.getLogTerm(sm.MatchIndex[msg.From]), sm.Log[sm.NextIndex[msg.From]:len(sm.Log)], sm.CommitIndex}}
 				}
 
-				cnt := 1 //TODO 0 or 1
-				for _, peerID := range sm.PeerIds {
-					if peerID != sm.ServerID && sm.MatchIndex[peerID] > sm.CommitIndex {
-						cnt += 1 // TODO could be increased greater
-					}
+				var indices []int
+				indices = append(indices, len(sm.Log)-1)
+				for _, peerId := range sm.PeerIds {
+					indices = append(indices, sm.MatchIndex[peerId])
 				}
-				if cnt > NUMBER_OF_NODES/2 {
-					sm.CommitIndex++
-					// Commit(index, data, err)
+				sort.Sort(sort.IntSlice(indices))
+				n := indices[NUMBER_OF_NODES/2]
+				if sm.getLogTerm(n) == sm.CurrentTerm {
+					sm.CommitIndex = n
 				}
-			} else {
-				sm.NextIndex[msg.From] = max(0, sm.NextIndex[msg.From]-1)
-				sm.actionCh <- Send{msg.From, AppendEntriesReq{sm.CurrentTerm, sm.ServerID, sm.NextIndex[msg.From] - 1, sm.getLogTerm(sm.NextIndex[msg.From] - 1), sm.Log[sm.NextIndex[msg.From] : sm.LastLogIndex+1], sm.CommitIndex}}
 			}
 		}
 	}
