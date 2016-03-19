@@ -1,16 +1,20 @@
 package main
 
-import "github.com/syndtr/goleveldb/leveldb"
-import "github.com/cs733-iitb/log"
-import "github.com/cs733-iitb/cluster"
-import "github.com/cs733-iitb/cluster/mock"
-import "fmt"
-import "math/rand"
-import "time"
+import (
+	"github.com/cs733-iitb/cluster"
+	"github.com/cs733-iitb/log"
+	"github.com/syndtr/goleveldb/leveldb"
 
-import "strconv"
-import "encoding/json"
-import "sync"
+	"encoding/gob"
+	"encoding/json"
+	//"fmt"
+	"github.com/cs733-iitb/cluster/mock"
+	"math/rand"
+	"os"
+	"strconv"
+	"sync"
+	"time"
+)
 
 type Node interface {
 	// Client's message to Raft node
@@ -39,9 +43,9 @@ type CommitInfo struct {
 
 // This is an example structure for Config
 type Config struct {
-	cluster          []NetConfig // Information about all servers, including this.
-	Id               int         // this node's id. One of the cluster's entries should match.
-	LogDir           string      // Log file directory for this node
+	cluster          cluster.Config // Information about all servers, including this.
+	Id               int            // this node's id. One of the cluster's entries should match.
+	LogDir           string         // Log file directory for this node
 	ElectionTimeout  int
 	HeartbeatTimeout int
 }
@@ -63,7 +67,7 @@ var configs cluster.Config = cluster.Config{
 func GetPeerList(peers []cluster.PeerConfig) []int {
 	var peerList []int
 	for _, peerId := range peers {
-		peerList = append(peerList, peerId)
+		peerList = append(peerList, peerId.Id)
 	}
 	return peerList
 }
@@ -72,7 +76,7 @@ type RaftNode struct {
 	sm          *StateMachine
 	timer       *time.Timer
 	clientCh    chan AppendEntry
-	actionCh    chan events
+	actionCh    chan interface{}
 	commitCh    chan CommitInfo
 	quitCh      chan bool
 	cluster     cluster.Config
@@ -90,15 +94,16 @@ func New(config Config, serverArg cluster.Server) RaftNode {
 		cluster:  config.cluster,
 		LogDir:   config.LogDir,
 		clientCh: make(chan AppendEntry),
-		actionCh: make(chan events, 100),
+		//actionCh: make(chan interface{}, 100),
 		quitCh:   make(chan bool),
 		commitCh: make(chan CommitInfo, 100),
-		sm:       NewStateMachine(int64(config.Id), GetPeerList(rn.cluster.Peers), rn.actionCh, config.ElectionTimeout, config.HeartbeatTimeout, rn.lg),
+
 		mutex:    &sync.RWMutex{},
 		logMutex: &sync.RWMutex{},
 		server:   serverArg,
 	}
-	rn.lg, _ = log.Open(rn.LogDir + "/Log" + strconv.Itoa(config.Id))
+	rn.lg, _ = log.Open(rn.LogDir + "/Log" + strconv.Itoa(int(config.Id)))
+	rn.sm = NewStateMachine(int(config.Id), GetPeerList(rn.cluster.Peers), float64(config.ElectionTimeout), float64(config.HeartbeatTimeout), rn.lg)
 	return rn
 }
 
@@ -118,14 +123,17 @@ func (rn *RaftNode) CommittedIndex() int64 {
 	rn.mutex.RLock()
 	c := rn.sm.CommitIndex
 	rn.mutex.RUnlock()
-	return c
+	return int64(c)
 }
 
 func (rn *RaftNode) Get(index int64) ([]byte, error) {
 	rn.logMutex.RLock()
 	c, err := rn.lg.Get(index)
-	var entry LEntry
-	json.Unmarshal(c, &entry)
+	// entry := c.(LogEntry)
+	var entry LogEntry
+	json.Unmarshal(c.([]byte), &entry)
+	// var entry LogEntry
+	// 	json.Unmarshal(c.Msg.([]byte), &entry)
 	rn.logMutex.RUnlock()
 	return entry.Data, err
 }
@@ -139,25 +147,28 @@ func (rn *RaftNode) LeaderId() int {
 
 func getLeader(r []RaftNode) *RaftNode {
 	for _, node := range r {
-		if rn.sm.LeaderID == rn.sm.LeaderID {
+		node.mutex.RLock()
+		if node.sm.State != "shutdown" && node.sm.LeaderID == node.sm.ServerID {
+			node.mutex.RUnlock()
 			return &node
 		}
+		node.mutex.RUnlock()
 	}
 	return nil
 }
 
 func (rn *RaftNode) ShutDown() {
 	rn.quitCh <- true
-	rn.sm.status = "shutdown"
+	rn.sm.State = "shutdown"
 
 	currentTermDB, _ := leveldb.OpenFile("/Users/Siddhartha/Documents/Academics/8thSem/cs733/assignment3/currentTerm", nil)
 	defer currentTermDB.Close()
-	currentTermDB.Put([]byte(strconv.FormatInt(rn.sm.ServerID, 10)), []byte(strconv.FormatInt(rn.sm.CurrentTerm, 10)), nil)
+	currentTermDB.Put([]byte(strconv.Itoa(rn.sm.ServerID)), []byte(strconv.Itoa(rn.sm.CurrentTerm)), nil)
 
 	votedForDB, _ := leveldb.OpenFile("/Users/Siddhartha/Documents/Academics/8thSem/cs733/assignment3/votedFor", nil)
 	defer votedForDB.Close()
-	votedForDB.Put([]byte(strconv.FormatInt(rn.sm.ServerID, 10)), []byte(strconv.FormatInt(rn.sm.VotedFor, 10)), nil)
-	close(rn.actionCh)
+	votedForDB.Put([]byte(strconv.Itoa(rn.sm.ServerID)), []byte(strconv.Itoa(rn.sm.VotedFor)), nil)
+	close(rn.sm.actionCh)
 	close(rn.clientCh)
 	close(rn.quitCh)
 	close(rn.commitCh)
@@ -181,64 +192,108 @@ func DBReset() {
 	for i := 0; i < len(configs.Peers); i++ {
 		votedForDB.Put([]byte(strconv.FormatInt(int64(configs.Peers[i].Id), 10)), []byte(strconv.FormatInt(int64(-1), 10)), nil)
 
-		lg, _ := log.Open("/Users/Siddhartha/Documents/Academics/8thSem/cs733/assignment3/Log" + strconv.Itoa(i))
-		lg.TruncateToEnd(0)
+		os.RemoveAll("/Users/Siddhartha/Documents/Academics/8thSem/cs733/assignment3/Log" + strconv.Itoa(configs.Peers[i].Id))
+
+		lg, _ := log.Open("/Users/Siddhartha/Documents/Academics/8thSem/cs733/assignment3/Log" + strconv.Itoa(configs.Peers[i].Id))
+		// lg.TruncateToEnd(0)
 		lg.Close()
 	}
 }
+
+// var configs cluster.Config = cluster.Config{
+// 	Peers: []cluster.PeerConfig{
+// 		{Id: 1, Address: "localhost:8010"},
+// 		{Id: 2, Address: "localhost:8020"},
+// 		{Id: 3, Address: "localhost:8030"},
+// 		{Id: 4, Address: "localhost:8040"},
+// 		{Id: 5, Address: "localhost:8050"}}}
 
 func makeRafts() []RaftNode {
 	var nodes []RaftNode
 	for i := 0; i < len(configs.Peers); i++ {
 		config := Config{configs, configs.Peers[i].Id, "/Users/Siddhartha/Documents/Academics/8thSem/cs733/assignment3", 150, 50}
-		server, _ = cluster.New(configs.Peers[i].Id, configs)
+		server, _ := cluster.New(configs.Peers[i].Id, configs)
 		nodes = append(nodes, New(config, server))
 	}
 	return nodes
 }
 
+func makeMockRafts() ([]RaftNode, *mock.MockCluster) {
+
+	clusterConfig := cluster.Config{Peers: []cluster.PeerConfig{
+		{Id: 1}, {Id: 2}, {Id: 3}, {Id: 4}, {Id: 5}}}
+	clstr, _ := mock.NewCluster(clusterConfig)
+
+	var nodes []RaftNode
+
+	for i := 0; i < len(clusterConfig.Peers); i++ {
+
+		config := Config{clusterConfig, clusterConfig.Peers[i].Id, "/Users/Siddhartha/Documents/Academics/8thSem/cs733/assignment3/", 150, 50}
+		nodes = append(nodes, New(config, clstr.Servers[i+1]))
+
+	}
+	// //fmt.Println("nodes:", nodes, "cls:", clstr)
+	return nodes, clstr
+}
+
 func (rn *RaftNode) startProcessing() {
-	rn.timer = time.NewTimer(time.Duration(rand.Intn(rn.sm.ELECTION_TIMEOUT)))
+	rand.Seed(int64(rn.sm.ServerID))
+	rn.timer = time.NewTimer(time.Duration(rand.Intn(int(rn.sm.ELECTION_TIMEOUT))))
 	for {
+		rn.mutex.Lock()
 		select {
 		case <-rn.timer.C:
 			rn.sm.netCh <- Timeout{}
 			rn.sm.ProcessEvent()
+			//fmt.Println(rn.sm.ServerID, "time out")
 		case appendMsg := <-rn.clientCh:
 			rn.sm.netCh <- appendMsg
 			rn.sm.ProcessEvent()
 		case envelop := <-rn.server.Inbox():
+			// //fmt.Println(rn.sm.ServerID, "recieved", (envelop.Msg.(interface{})))
 			rn.sm.netCh <- envelop.Msg
 			rn.sm.ProcessEvent()
-		case ev := <-rn.actionCh:
+		case ev := <-rn.sm.actionCh:
 			switch ev.(type) {
 			case Alarm:
-				rn.timer.Reset(ev.(Alarm).delay * Millisecond)
+				rn.timer.Reset(time.Duration(ev.(Alarm).Delay) * time.Millisecond)
 			case Send:
 				ev, _ := ev.(Send)
-				arg, _ := json.Marshal(ev.Event)
-				rn.server.Outbox() <- &cluster.Envelope{Pid: ev.peerID, Msg: arg}
+				rn.server.Outbox() <- &cluster.Envelope{Pid: ev.PeerID, Msg: ev.Event}
+				// //fmt.Println(rn.sm.ServerID, "sent", ev.PeerID, string(arg))
 			case Commit:
 				ev, _ := ev.(Commit)
-				out := CommitInfo{ev.Data, ev.Index, ev.Err}
+				//fmt.Println("info recd", ev.Data, int64(ev.Index))
+				out := CommitInfo{ev.Data, int64(ev.Index), ev.Err}
 				rn.commitCh <- out
 			case LogTransfer:
 				ev, _ := ev.(LogTransfer)
-				rn.lg.TruncateToEnd(ev.Index)
+				//fmt.Println("log transfer called")
+				rn.logMutex.Lock()
+				//fmt.Println("log transfer lock got")
+				rn.lg.TruncateToEnd(int64(ev.Index))
 				arg, _ := json.Marshal(ev.LEntry)
 				rn.lg.Append(arg)
+				// rn.lg.Append(ev.LEntry)
+				rn.logMutex.Unlock()
 			}
 		case <-rn.quitCh:
+			rn.mutex.Unlock()
 			return
-		}
 
+		}
+		rn.mutex.Unlock()
 	}
-	main_wait <- True
+
+	main_wait <- true
 }
 
 var main_wait chan bool
 
-func begin() {
+func setup() {
+
+	DBReset()
+
 	gob.Register(VoteReq{})
 	gob.Register(VoteResp{})
 	gob.Register(AppendEntriesReq{})
@@ -246,15 +301,39 @@ func begin() {
 	gob.Register(AppendEntry{})
 	gob.Register(Timeout{})
 
-	main_wait = make(chan bool)
-	nodes := makeRafts()
-	for i := 0; i < len(configs.Peers); i++ {
-		//defer nodes[i].lg.Close()
-		go nodes[i].startProcessing()
-	}
-	<-main_wait
+	// main_wait = make(chan bool)
+	// 	nodes := makeRafts()
+	// 	for i := 0; i < len(configs.Peers); i++ {
+	// 		defer nodes[i].lg.Close()
+	// 		go nodes[i].startProcessing()
+	// 	}
+	// 	time.Sleep(10 * time.Second)
+	//
+	// 	ldr := getLeader(nodes)
+	// 	//fmt.Println("ldr is ", ldr.sm.ServerID)
+	// 	ldr.Append([]byte("foo"))
+	// 	time.Sleep(1 * time.Second)
+	// 	for _, node := range nodes {
+	// 		//fmt.Println("waiting")
+	// 		select {
+	//
+	// 		case ci := <-node.CommitChannel():
+	// 			//fmt.Println("over")
+	// 			if ci.Err != nil {
+	// 				//fmt.Println(ci.Err)
+	// 			}
+	// 			if string(ci.Data) != "foo" {
+	// 				//fmt.Println("Got different data", string(ci.Data))
+	// 			} else {
+	// 				//fmt.Println("Proper Commit")
+	// 			}
+	// 			//default: //fmt.Println("Expected message on all nodes")
+	// 		}
+	// 	}
+	//
+	// 	<-main_wait
 }
 
 func main() {
-	begin()
+	setup()
 }
