@@ -3,7 +3,7 @@ package main
 import (
 	// "log"
 	"encoding/json"
-	//"fmt"
+	// "fmt"
 	"github.com/cs733-iitb/log"
 	"github.com/syndtr/goleveldb/leveldb"
 	"math/rand"
@@ -92,9 +92,10 @@ func (sm *StateMachine) LogStore(Index int, Entry []byte, EntryTerm int) {
 	}
 	sm.Log[Index].Data = Entry
 	sm.Log[Index].Term = EntryTerm
-	//fmt.Println("lt calling")
+	// fmt.Println("lt calling", sm.ServerID, Index, sm.Log[Index])
+
 	sm.actionCh <- LogTransfer{Index, sm.Log[Index]}
-	//fmt.Println("lt success")
+	// fmt.Println("lt success")
 }
 
 type StateMachine struct {
@@ -120,6 +121,12 @@ type StateMachine struct {
 	ELECTION_TIMEOUT  float64
 }
 
+// const PATH = "/Users/Siddhartha/Documents/Academics/8thSem/cs733/assignment3"
+
+// const PATH = "/Users/Siddhartha/Documents/Academics/8thSem/go/src/github.com/sidutta/cs733/assignment3"
+
+const PATH = "./" //github.com/sidutta/cs733/assignment3
+
 var NUMBER_OF_NODES int
 
 func NewStateMachine(id int, peerIds []int, electionTimeout float64, heartbeatTimeout float64, lg *log.Log) *StateMachine {
@@ -129,9 +136,9 @@ func NewStateMachine(id int, peerIds []int, electionTimeout float64, heartbeatTi
 		VoteGranted:  make(map[int]bool),
 		NextIndex:    make(map[int]int),
 		MatchIndex:   make(map[int]int),
-		updateCh:     make(chan interface{}, 10),
-		netCh:        make(chan interface{}, 50),
-		actionCh:     make(chan interface{}, 50),
+		updateCh:     make(chan interface{}, 250000),
+		netCh:        make(chan interface{}, 250000),
+		actionCh:     make(chan interface{}, 250000),
 		LastLogIndex: -1,
 		CommitIndex:  -1,
 		PeerIds:      peerIds,
@@ -142,7 +149,7 @@ func NewStateMachine(id int, peerIds []int, electionTimeout float64, heartbeatTi
 	sm.HEARTBEAT_TIMEOUT = heartbeatTimeout
 	NUMBER_OF_NODES = len(peerIds)
 
-	CurrentTermDB, _ := leveldb.OpenFile("/Users/Siddhartha/Documents/Academics/8thSem/cs733/assignment3/currentTerm", nil)
+	CurrentTermDB, _ := leveldb.OpenFile(PATH+"/currentTerm", nil)
 	defer CurrentTermDB.Close()
 
 	termStr, err := CurrentTermDB.Get([]byte(strconv.FormatInt(int64(sm.ServerID), 10)), nil)
@@ -152,7 +159,7 @@ func NewStateMachine(id int, peerIds []int, electionTimeout float64, heartbeatTi
 		sm.CurrentTerm = int(0)
 	}
 
-	VotedForDB, _ := leveldb.OpenFile("/Users/Siddhartha/Documents/Academics/8thSem/cs733/assignment3/votedFor", nil)
+	VotedForDB, _ := leveldb.OpenFile(PATH+"/votedFor", nil)
 	defer VotedForDB.Close()
 
 	votedForStr, err := VotedForDB.Get([]byte(strconv.Itoa(sm.ServerID)), nil)
@@ -221,7 +228,7 @@ func (sm *StateMachine) VoteReq(msg VoteReq) {
 		sm.State = "follower"
 		sm.CurrentTerm = msg.Term
 		sm.VotedFor = 0
-		// sm.updateCh <- SaveVotedFor{sm.VotedFor}
+		sm.updateCh <- SaveVotedFor{sm.VotedFor}
 		sm.actionCh <- Alarm{Delay: (float64(1.0) + rand.Float64()) * sm.ELECTION_TIMEOUT}
 	}
 
@@ -235,7 +242,7 @@ func (sm *StateMachine) VoteReq(msg VoteReq) {
 					msg.LastLogIndex >= len(sm.Log)-1)) {
 			sm.CurrentTerm = msg.Term
 			sm.VotedFor = msg.CandidateId
-			// sm.updateCh <- SaveVotedFor{sm.VotedFor}
+			sm.updateCh <- SaveVotedFor{sm.VotedFor}
 			sm.actionCh <- Send{msg.CandidateId, VoteResp{sm.ServerID, sm.CurrentTerm, true}}
 			sm.actionCh <- Alarm{(float64(1.0) + rand.Float64()) * sm.ELECTION_TIMEOUT}
 			//fmt.Println(sm.ServerID, "+ voted for", sm.VotedFor, "when candidate", msg.CandidateId)
@@ -282,7 +289,7 @@ func (sm *StateMachine) VoteResp(msg VoteResp) {
 		sm.State = "follower"
 		sm.CurrentTerm = msg.Term
 		sm.VotedFor = 0
-		// sm.updateCh <- SaveVotedFor{sm.VotedFor}
+		sm.updateCh <- SaveVotedFor{sm.VotedFor}
 
 	}
 	//fmt.Println("not yet")
@@ -321,7 +328,7 @@ func (sm *StateMachine) AppendEntriesReq(msg AppendEntriesReq) {
 		sm.State = "follower"
 		sm.CurrentTerm = msg.Term
 		sm.VotedFor = 0
-		// sm.updateCh <- SaveVotedFor{sm.VotedFor}
+		sm.updateCh <- SaveVotedFor{sm.VotedFor}
 
 		sm.actionCh <- Alarm{(float64(1.0) + rand.Float64()) * sm.ELECTION_TIMEOUT}
 	}
@@ -335,7 +342,11 @@ func (sm *StateMachine) AppendEntriesReq(msg AppendEntriesReq) {
 			success := (msg.PrevLogIndex == -1 || (msg.PrevLogIndex <= len(sm.Log)-1 && sm.getLogTerm(msg.PrevLogIndex) == msg.PrevLogTerm))
 			index := -1
 			//fmt.Println("was here", sm.CommitIndex, msg.CommitIndex)
-			//fmt.Println(msg.PrevLogIndex, msg.PrevLogIndex, len(sm.Log)-1, msg.PrevLogTerm, success, sm.ServerID, msg.LeaderId)
+			// if msg.PrevLogIndex <= len(sm.Log)-1 {
+			// 				fmt.Println(msg.PrevLogIndex, msg.PrevLogIndex, len(sm.Log)-1, sm.getLogTerm(msg.PrevLogIndex), msg.PrevLogTerm, success, sm.ServerID, msg.LeaderId)
+			// 			} else {
+			// 				fmt.Println(msg.PrevLogIndex, msg.PrevLogIndex, len(sm.Log)-1, msg.PrevLogTerm, success, sm.ServerID, msg.LeaderId)
+			// 			}
 			// //fmt.Println(msg.PrevLogIndex, msg.PrevLogIndex, len(sm.Log)-1, sm.getLogTerm(msg.PrevLogIndex), msg.PrevLogTerm)
 			if success {
 				index = msg.PrevLogIndex
@@ -347,12 +358,12 @@ func (sm *StateMachine) AppendEntriesReq(msg AppendEntriesReq) {
 				}
 				sm.LastLogIndex = index
 				sm.LastLogTerm = sm.CurrentTerm
-				//fmt.Println("commit", sm.CommitIndex, msg.CommitIndex, index, sm.ServerID)
+				// fmt.Println("commit", sm.CommitIndex, msg.CommitIndex, index, sm.ServerID)
 				if sm.CommitIndex < msg.CommitIndex {
 					sm.CommitIndex = min(msg.CommitIndex, index)
 
 					if sm.CommitIndex != -1 {
-						//fmt.Println("aaaaaaa1", sm.CommitIndex, sm.Log)
+						// fmt.Println("aaaaaaa1", sm.CommitIndex, sm.Log)
 						sm.actionCh <- Commit{sm.CommitIndex, sm.Log[sm.CommitIndex].Data, nil}
 					} else {
 						//fmt.Println("aaaaaaa2")
@@ -375,7 +386,7 @@ func (sm *StateMachine) AppendEntriesResp(msg AppendEntriesResp) {
 		sm.State = "follower"
 		sm.CurrentTerm = msg.Term
 		sm.VotedFor = 0
-		// sm.updateCh <- SaveVotedFor{sm.VotedFor}
+		sm.updateCh <- SaveVotedFor{sm.VotedFor}
 
 		sm.actionCh <- Alarm{Delay: (1.0 + rand.Float64()) * sm.ELECTION_TIMEOUT}
 	}
@@ -441,11 +452,11 @@ func (sm *StateMachine) Timeout() {
 		sm.LeaderID = 0
 		sm.State = "candidate"
 		sm.CurrentTerm++
-		//fmt.Println("called by", sm.ServerID, sm.CurrentTerm)
+		// fmt.Println("called by", sm.ServerID, sm.CurrentTerm)
 
 		sm.updateCh <- SaveTerm{sm.CurrentTerm}
 		sm.VotedFor = sm.ServerID
-		// sm.updateCh <- SaveVotedFor{sm.VotedFor}
+		sm.updateCh <- SaveVotedFor{sm.VotedFor}
 
 		sm.VoteGranted[sm.ServerID] = true
 		for _, peerID := range sm.PeerIds {
@@ -460,10 +471,10 @@ func (sm *StateMachine) Timeout() {
 	case "candidate":
 		sm.LeaderID = 0
 		sm.CurrentTerm++
-		//fmt.Println("called by", sm.ServerID, "as cand", sm.CurrentTerm)
+		// fmt.Println("called by", sm.ServerID, "as cand", sm.CurrentTerm)
 		sm.updateCh <- SaveTerm{sm.CurrentTerm}
 		sm.VotedFor = sm.ServerID
-		// sm.updateCh <- SaveVotedFor{sm.VotedFor}
+		sm.updateCh <- SaveVotedFor{sm.VotedFor}
 
 		sm.VoteGranted[sm.ServerID] = true
 		for _, peerID := range sm.PeerIds {
@@ -480,7 +491,7 @@ func (sm *StateMachine) Timeout() {
 				sm.actionCh <- Send{peerID, AppendEntriesReq{sm.CurrentTerm, sm.ServerID, sm.LastLogIndex, sm.LastLogTerm, nil, sm.CommitIndex}}
 			}
 		}
-		//fmt.Println("sending heartbeat")
+		// fmt.Println("sending heartbeat")
 		sm.actionCh <- Alarm{(1.0 + rand.Float64()) * sm.HEARTBEAT_TIMEOUT}
 
 	}

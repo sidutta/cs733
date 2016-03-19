@@ -4,10 +4,11 @@ import (
 	"github.com/cs733-iitb/cluster"
 	"github.com/cs733-iitb/log"
 	"github.com/syndtr/goleveldb/leveldb"
+	// "reflect"
 
 	"encoding/gob"
 	"encoding/json"
-	//"fmt"
+	// "fmt"
 	"github.com/cs733-iitb/cluster/mock"
 	"math/rand"
 	"os"
@@ -78,7 +79,7 @@ type RaftNode struct {
 	clientCh    chan AppendEntry
 	actionCh    chan interface{}
 	commitCh    chan CommitInfo
-	quitCh      chan bool
+	byeBye      chan bool
 	cluster     cluster.Config
 	server      cluster.Server
 	LogDir      string
@@ -95,8 +96,8 @@ func New(config Config, serverArg cluster.Server) RaftNode {
 		LogDir:   config.LogDir,
 		clientCh: make(chan AppendEntry),
 		//actionCh: make(chan interface{}, 100),
-		quitCh:   make(chan bool),
-		commitCh: make(chan CommitInfo, 100),
+		byeBye:   make(chan bool),
+		commitCh: make(chan CommitInfo, 250),
 
 		mutex:    &sync.RWMutex{},
 		logMutex: &sync.RWMutex{},
@@ -158,19 +159,19 @@ func getLeader(r []RaftNode) *RaftNode {
 }
 
 func (rn *RaftNode) ShutDown() {
-	rn.quitCh <- true
+	rn.byeBye <- true
 	rn.sm.State = "shutdown"
 
-	currentTermDB, _ := leveldb.OpenFile("/Users/Siddhartha/Documents/Academics/8thSem/cs733/assignment3/currentTerm", nil)
+	currentTermDB, _ := leveldb.OpenFile(PATH+"/currentTerm", nil)
 	defer currentTermDB.Close()
 	currentTermDB.Put([]byte(strconv.Itoa(rn.sm.ServerID)), []byte(strconv.Itoa(rn.sm.CurrentTerm)), nil)
 
-	votedForDB, _ := leveldb.OpenFile("/Users/Siddhartha/Documents/Academics/8thSem/cs733/assignment3/votedFor", nil)
+	votedForDB, _ := leveldb.OpenFile(PATH+"/votedFor", nil)
 	defer votedForDB.Close()
 	votedForDB.Put([]byte(strconv.Itoa(rn.sm.ServerID)), []byte(strconv.Itoa(rn.sm.VotedFor)), nil)
 	close(rn.sm.actionCh)
 	close(rn.clientCh)
-	close(rn.quitCh)
+	close(rn.byeBye)
 	close(rn.commitCh)
 
 	rn.server.Close()
@@ -180,21 +181,21 @@ func (rn *RaftNode) ShutDown() {
 
 func DBReset() {
 
-	currentTermDB, _ := leveldb.OpenFile("/Users/Siddhartha/Documents/Academics/8thSem/cs733/assignment3/currentTerm", nil)
+	currentTermDB, _ := leveldb.OpenFile(PATH+"/currentTerm", nil)
 	defer currentTermDB.Close()
 	for i := 0; i < len(configs.Peers); i++ {
 		currentTermDB.Put([]byte(strconv.FormatInt(int64(i), 10)), []byte(strconv.FormatInt(int64(0), 10)), nil)
 	}
 
-	votedForDB, _ := leveldb.OpenFile("/Users/Siddhartha/Documents/Academics/8thSem/cs733/assignment3/votedFor", nil)
+	votedForDB, _ := leveldb.OpenFile(PATH+"/votedFor", nil)
 	defer votedForDB.Close()
 
 	for i := 0; i < len(configs.Peers); i++ {
 		votedForDB.Put([]byte(strconv.FormatInt(int64(configs.Peers[i].Id), 10)), []byte(strconv.FormatInt(int64(-1), 10)), nil)
 
-		os.RemoveAll("/Users/Siddhartha/Documents/Academics/8thSem/cs733/assignment3/Log" + strconv.Itoa(configs.Peers[i].Id))
+		os.RemoveAll(PATH + "/Log" + strconv.Itoa(configs.Peers[i].Id))
 
-		lg, _ := log.Open("/Users/Siddhartha/Documents/Academics/8thSem/cs733/assignment3/Log" + strconv.Itoa(configs.Peers[i].Id))
+		lg, _ := log.Open(PATH + "/Log" + strconv.Itoa(configs.Peers[i].Id))
 		// lg.TruncateToEnd(0)
 		lg.Close()
 	}
@@ -209,9 +210,10 @@ func DBReset() {
 // 		{Id: 5, Address: "localhost:8050"}}}
 
 func makeRafts() []RaftNode {
+	// votedForDB, _ = leveldb.OpenFile(PATH+"/votedFor", nil)
 	var nodes []RaftNode
 	for i := 0; i < len(configs.Peers); i++ {
-		config := Config{configs, configs.Peers[i].Id, "/Users/Siddhartha/Documents/Academics/8thSem/cs733/assignment3", 150, 50}
+		config := Config{configs, configs.Peers[i].Id, PATH + "", 550, 50}
 		server, _ := cluster.New(configs.Peers[i].Id, configs)
 		nodes = append(nodes, New(config, server))
 	}
@@ -219,7 +221,7 @@ func makeRafts() []RaftNode {
 }
 
 func makeMockRafts() ([]RaftNode, *mock.MockCluster) {
-
+	// votedForDB, _ = leveldb.OpenFile(PATH+"/votedFor", nil)
 	clusterConfig := cluster.Config{Peers: []cluster.PeerConfig{
 		{Id: 1}, {Id: 2}, {Id: 3}, {Id: 4}, {Id: 5}}}
 	clstr, _ := mock.NewCluster(clusterConfig)
@@ -228,12 +230,38 @@ func makeMockRafts() ([]RaftNode, *mock.MockCluster) {
 
 	for i := 0; i < len(clusterConfig.Peers); i++ {
 
-		config := Config{clusterConfig, clusterConfig.Peers[i].Id, "/Users/Siddhartha/Documents/Academics/8thSem/cs733/assignment3/", 150, 50}
+		config := Config{clusterConfig, clusterConfig.Peers[i].Id, PATH + "", 550, 50}
 		nodes = append(nodes, New(config, clstr.Servers[i+1]))
 
 	}
 	// //fmt.Println("nodes:", nodes, "cls:", clstr)
 	return nodes, clstr
+}
+
+func (rn *RaftNode) fSaveTerm(i int) {
+	var currentTermDB *leveldb.DB
+	var err error
+	currentTermDB, err = leveldb.OpenFile(PATH+"/currentTerm", nil)
+	for err != nil {
+		currentTermDB, err = leveldb.OpenFile(PATH+"/currentTerm", nil)
+	}
+	// fmt.Println("sad", currentTermDB, reflect.TypeOf(currentTermDB), err, reflect.TypeOf(err))
+	defer currentTermDB.Close()
+	currentTermDB.Put([]byte(strconv.Itoa(rn.sm.ServerID)), []byte(strconv.Itoa(i)), nil)
+
+}
+
+func (rn *RaftNode) fSaveVotedFor(i int) {
+
+	var votedForDB *leveldb.DB
+	var err error
+	votedForDB, err = leveldb.OpenFile(PATH+"/currentTerm", nil)
+	for err != nil {
+		votedForDB, err = leveldb.OpenFile(PATH+"/currentTerm", nil)
+	}
+
+	defer votedForDB.Close()
+	votedForDB.Put([]byte(strconv.Itoa(rn.sm.ServerID)), []byte(strconv.Itoa(i)), nil)
 }
 
 func (rn *RaftNode) startProcessing() {
@@ -263,7 +291,7 @@ func (rn *RaftNode) startProcessing() {
 				// //fmt.Println(rn.sm.ServerID, "sent", ev.PeerID, string(arg))
 			case Commit:
 				ev, _ := ev.(Commit)
-				//fmt.Println("info recd", ev.Data, int64(ev.Index))
+				// fmt.Println("info recd", int64(ev.Index), rn.sm.ServerID, rn.sm.LeaderID, ev.Err)
 				out := CommitInfo{ev.Data, int64(ev.Index), ev.Err}
 				rn.commitCh <- out
 			case LogTransfer:
@@ -277,10 +305,16 @@ func (rn *RaftNode) startProcessing() {
 				// rn.lg.Append(ev.LEntry)
 				rn.logMutex.Unlock()
 			}
-		case <-rn.quitCh:
+		case ev := <-rn.sm.updateCh:
+			switch ev.(type) {
+			case SaveVotedFor:
+				rn.fSaveVotedFor(ev.(SaveVotedFor).VotedFor)
+			case SaveTerm:
+				rn.fSaveTerm(ev.(SaveTerm).Term)
+			}
+		case <-rn.byeBye:
 			rn.mutex.Unlock()
 			return
-
 		}
 		rn.mutex.Unlock()
 	}
@@ -332,8 +366,4 @@ func setup() {
 	// 	}
 	//
 	// 	<-main_wait
-}
-
-func main() {
-	setup()
 }
