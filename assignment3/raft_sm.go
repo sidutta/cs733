@@ -170,7 +170,7 @@ func NewStateMachine(id int, peerIds []int, electionTimeout float64, heartbeatTi
 	}
 
 	lastIndex := int(lg.GetLastIndex())
-	log.Println("last index is ", lastIndex)
+	//fmt.Println("last index is ", lastIndex)
 	if lastIndex != -1 {
 		var i int
 		for i = 0; i <= lastIndex; i++ {
@@ -495,8 +495,4 @@ func (sm *StateMachine) Timeout() {
 		sm.actionCh <- Alarm{(1.0 + rand.Float64()) * sm.HEARTBEAT_TIMEOUT}
 
 	}
-}
-
-func main() {
-
 }

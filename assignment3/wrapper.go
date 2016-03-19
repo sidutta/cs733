@@ -8,7 +8,7 @@ import (
 
 	"encoding/gob"
 	"encoding/json"
-	"fmt"
+	// "fmt"
 	"github.com/cs733-iitb/cluster/mock"
 	"math/rand"
 	"os"
@@ -366,8 +366,4 @@ func setup() {
 	// 	}
 	//
 	// 	<-main_wait
-}
-
-func main() {
-
 }
