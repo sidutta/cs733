@@ -16,13 +16,13 @@ type FileService struct {
 	metadatadb *leveldb.DB
 	mutex      *sync.RWMutex
 	input      <-chan CommitInfo
-	routes     []chan Response
+	receiver   []chan Response
 }
 
-func NewFS(Id int, routes []chan Response, input <-chan CommitInfo) *FileService {
+func NewFS(Id int, receiver []chan Response, input <-chan CommitInfo) *FileService {
 	var f *FileService = &FileService{}
 	f.Id = int64(Id)
-	f.routes = routes
+	f.receiver = receiver
 	f.input = input
 	f.datadb, _ = leveldb.OpenFile("datadb"+strconv.Itoa(Id), nil)
 	f.metadatadb, _ = leveldb.OpenFile("metadatadb"+strconv.Itoa(Id), nil)
@@ -84,7 +84,7 @@ func (f *FileService) ProcessMsg(msg Msg, toSend bool) {
 				f.mutex.RUnlock()
 				// conn.Write([]byte("ERR_FILE_NOT_FOUND\r\n")) // content has expired
 				if toSend {
-					f.routes[msg.Id] <- Response{"ERR_FILE_NOT_FOUND\r\n", true, nil}
+					f.receiver[msg.Id] <- Response{"ERR_FILE_NOT_FOUND\r\n", true, nil}
 				}
 			} else {
 				data, err2 := f.datadb.Get([]byte(msg.Filename), nil)
@@ -104,13 +104,13 @@ func (f *FileService) ProcessMsg(msg Msg, toSend bool) {
 				// conn.Write(response)
 				// log.Println(response)
 				if toSend {
-					f.routes[msg.Id] <- Response{"CONTENTS " + version_str + " " + numbytes_str + " " + exp_str + " \r\n", false, data}
+					f.receiver[msg.Id] <- Response{"CONTENTS " + version_str + " " + numbytes_str + " " + exp_str + " \r\n", false, data}
 				}
 			}
 		} else {
 			f.mutex.RUnlock()
 			if toSend {
-				f.routes[msg.Id] <- Response{"ERR_FILE_NOT_FOUND\r\n", true, nil}
+				f.receiver[msg.Id] <- Response{"ERR_FILE_NOT_FOUND\r\n", true, nil}
 			}
 		}
 		return
@@ -123,7 +123,7 @@ func (f *FileService) ProcessMsg(msg Msg, toSend bool) {
 		if err != nil {
 			f.mutex.Unlock()
 			if toSend {
-				f.routes[msg.Id] <- Response{"ERR_FILE_NOT_FOUND\r\n", true, nil}
+				f.receiver[msg.Id] <- Response{"ERR_FILE_NOT_FOUND\r\n", true, nil}
 			}
 		} else {
 
@@ -133,7 +133,7 @@ func (f *FileService) ProcessMsg(msg Msg, toSend bool) {
 			// conn.Write(append([]byte("OK\r\n")))
 
 			if toSend {
-				f.routes[msg.Id] <- Response{"OK\r\n", false, nil}
+				f.receiver[msg.Id] <- Response{"OK\r\n", false, nil}
 			}
 
 		}
@@ -174,7 +174,7 @@ func (f *FileService) ProcessMsg(msg Msg, toSend bool) {
 		// some_int, err := conn.Write([]byte(response))
 
 		if toSend {
-			f.routes[msg.Id] <- Response{"OK " + string(new_version) + "\r\n", false, nil}
+			f.receiver[msg.Id] <- Response{"OK " + string(new_version) + "\r\n", false, nil}
 		}
 
 		// if err != nil {
@@ -189,7 +189,7 @@ func (f *FileService) ProcessMsg(msg Msg, toSend bool) {
 
 		if err != nil {
 			f.mutex.Unlock()
-			f.routes[msg.Id] <- Response{"ERR_FILE_NOT_FOUND\r\n", true, nil}
+			f.receiver[msg.Id] <- Response{"ERR_FILE_NOT_FOUND\r\n", true, nil}
 		} else {
 
 			req_version_int, _ := strconv.Atoi(msg.Version)
@@ -200,7 +200,7 @@ func (f *FileService) ProcessMsg(msg Msg, toSend bool) {
 
 			if prev_version_int != req_version_int {
 				prev_version_str := strconv.Itoa(prev_version_int)
-				f.routes[msg.Id] <- Response{"ERR_VERSION " + prev_version_str + "\r\n", true, nil}
+				f.receiver[msg.Id] <- Response{"ERR_VERSION " + prev_version_str + "\r\n", true, nil}
 				f.mutex.Unlock()
 			} else {
 
@@ -220,7 +220,7 @@ func (f *FileService) ProcessMsg(msg Msg, toSend bool) {
 					log.Println("failed to add to database: ", err)
 				}
 
-				f.routes[msg.Id] <- Response{"OK " + string(new_version) + "\r\n", true, nil}
+				f.receiver[msg.Id] <- Response{"OK " + string(new_version) + "\r\n", true, nil}
 
 			}
 		}

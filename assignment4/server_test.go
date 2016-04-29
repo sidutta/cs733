@@ -3,7 +3,6 @@ package main
 import "net"
 import "fmt"
 import "bufio"
-import "sync"
 import "os"
 import "strings"
 import "strconv"
@@ -61,6 +60,7 @@ func TestFileSystem(t *testing.T) {
 	resp := scanner.Text()          // extract the text from the buffer
 	arr := strings.Split(resp, " ") // split into OK and <version>
 	expect(t, arr[0], "ERR_FILE_NOT_FOUND")
+
 	// writing to a file
 	fmt.Fprintf(conn, "write %v %v %v\r\n%v\r\n", name, len(contents), exptime, contents)
 	scanner.Scan()                 // read first line
@@ -71,9 +71,20 @@ func TestFileSystem(t *testing.T) {
 	if err != nil {
 		t.Error("Non-numeric version found")
 	}
-	// version := int64(ver)
 	expect(t, arr[1], "1")
 
+	//checking whether what was written is read correctly
+	fmt.Fprintf(conn, "read %v\r\n", name)
+	scanner.Scan()                 // read first line
+	resp = scanner.Text()          // extract the text from the buffer
+	arr = strings.Split(resp, " ") // split into OK and <version>
+	expect(t, arr[1], "1")
+	expect(t, arr[2], "3")
+	scanner.Scan()        // read first line
+	resp = scanner.Text() // extract the text from the buffer
+	expect(t, resp, "bye")
+
+	// checking version increment on rewriting
 	contents = "byebye"
 	fmt.Fprintf(conn, "write %v %v %v\r\n%v\r\n", name, len(contents), exptime, contents)
 	scanner.Scan()                 // read first line
@@ -87,6 +98,7 @@ func TestFileSystem(t *testing.T) {
 	// version := int64(ver)
 	expect(t, arr[1], "2")
 
+	// checking whether the  re-written data is read correctly and version incremented
 	fmt.Fprintf(conn, "read %v\r\n", name)
 	scanner.Scan()                 // read first line
 	resp = scanner.Text()          // extract the text from the buffer
@@ -97,161 +109,167 @@ func TestFileSystem(t *testing.T) {
 	resp = scanner.Text() // extract the text from the buffer
 	expect(t, resp, "byebye")
 
-	// now delete should work
+	// now delete should work since the file exists
 	fmt.Fprintf(conn, text)
 	scanner.Scan()                 // read first line
 	resp = scanner.Text()          // extract the text from the buffer
 	arr = strings.Split(resp, " ") // split into OK and <version>
 	expect(t, arr[0], "OK")
 
-	// /**************************************************************/
-	// // Test version increment
-	// text = "delete input.txt\r\n"
-	// fmt.Fprintf(conn, text)
-	//
-	// message, _ := bufio.NewReader(conn).ReadString('\n')
+	// writing a dummy file, will use it later after leader shutdown
+	// there's no expiry time associated with it
+	fmt.Fprintf(conn, "write %v %v %v\r\n%v\r\n", "dummy.txt", 5, 10000, "apple")
+	scanner.Scan()                 // read first line
+	resp = scanner.Text()          // extract the text from the buffer
+	arr = strings.Split(resp, " ") // split into OK and <version>
+	expect(t, arr[0], "OK")
+	_, err = strconv.Atoi(arr[1]) // parse version as number
+	if err != nil {
+		t.Error("Non-numeric version found")
+	}
+	expect(t, arr[1], "1")
 
-	text = "write input.txt 15\r\nThis is a file.\r\n"
-	fmt.Fprintf(conn, text)
+	// making concurrent writes
+	parallel_writes_count := 500
 
-	// connect to this socket
-	conn2, _ := net.Dial("tcp", "localhost:8080")
-	scanner2 := bufio.NewScanner(conn2)
+	wait_ch := make(chan int, parallel_writes_count)
+	wait_ch2 := make(chan int, parallel_writes_count)
 
-	text2 := "write input.txt 8\r\nThis is.\r\n"
-	fmt.Fprintf(conn2, text2)
-
-	scanner.Scan()        // read first line
-	resp = scanner.Text() // extract the text from the buffer
-	expect(t, resp, "OK 1")
-
-	fmt.Print("Message from server: " + resp)
-	scanner2.Scan()          // read first line
-	resp2 := scanner2.Text() // extract the text from the buffer
-	expect(t, resp2, "OK 2")
-	fmt.Print("Message from server: " + resp2)
-	// message2, _ := bufio.NewReader(conn2).ReadString('\n')
-	// fmt.Print("Message from server: " + message2)
-	//
-	// text = "cas input.txt 1 2\r\n%#\r\n"
-	// fmt.Fprintf(conn, text)
-	//
-	// message, _ = bufio.NewReader(conn).ReadString('\n')
-	//
-	// if message1 == message2 || len(message) < 2 || (message[:2] != "OK" && (len(message) < 11 || message[:11] != "ERR_VERSION")) {
-	// 	t.Error("Error in version concurrent write")
-	// }
-	//
-	// text = "delete input.txt\r\n"
-	// fmt.Fprintf(conn, text)
-	// message, _ = bufio.NewReader(conn).ReadString('\n')
-	// //fmt.Println("Done Version Check")
-	//
-	// /**************************************************************/
-	// // Leader shutdown and replication check
-	// var ldr *RaftNode
-	// for {
-	// 	ldr = getLeader(rafts)
-	// 	if ldr != nil {
-	// 		break
-	// 	}
-	// }
-	// ldr.ShutDown()
-	// //rafts[(ldr.Id() + 1)%5].ShutDown()
-	//
-	// time.Sleep(1 * time.Second)
-	//
-	// //fmt.Println("Started Leader ReElection")
-	// for {
-	// 	ldr = getLeader(rafts)
-	// 	if ldr != nil {
-	// 		break
-	// 	}
-	// }
-	// //fmt.Println("Done Leader ReElection")
-	//
-	// fmt.Fprintf(conn, "read %v\r\n", name) // try a read now
-	// scanner.Scan()
-	//
-	// arr = strings.Split(scanner.Text(), " ")
-	// expect(t, arr[0], "CONTENTS")
-	// expect(t, arr[1], fmt.Sprintf("%v", version)) // expect only accepts strings, convert int version to string
-	// expect(t, arr[2], fmt.Sprintf("%v", len(contents)))
-	// scanner.Scan()
-	// expect(t, contents, scanner.Text())
-	//
-	// text = "delete hi.txt\r\n"
-	// fmt.Fprintf(conn, text)
-	// message, _ = bufio.NewReader(conn).ReadString('\n')
-	//
-	// /**************************************************************/
-	// // Test concurrent write to the same file by multiple clients
-	// text = "delete input2.txt\r\n"
-	// fmt.Fprintf(conn, text)
-	// message, _ = bufio.NewReader(conn).ReadString('\n')
-	// //fmt.Println("Kill ok")
-	//
-	// i := 0
-	// var wg sync.WaitGroup
-	// wg.Add(10)
-	// for i < 10 {
-	// 	go clients(&wg, t)
-	// 	i++
-	// }
-	//
-	// wg.Wait()
-	// //fmt.Println("Done Write")
-	//
-	// text = "read input2.txt\r\n"
-	// fmt.Fprintf(conn, text)
-	//
-	// message, _ = bufio.NewReader(conn).ReadString('\n')
-	// //fmt.Print("Message from server: "+message)
-	//
-	// if len(message) < 8 || message[:8] != "CONTENTS" {
-	// 	t.Error("Error in concurrent write")
-	// }
-	//
-	// /*
-	// 	if len(message) < 8 || message[:8] != "CONTENTS" {
-	// 		message, _ = bufio.NewReader(conn).ReadString('\n')
-	// 		//fmt.Print("Message from server: "+message)
-	//
-	// 		if len(message) < 8 || message[:8] != "CONTENTS" {
-	// 			t.Error("Error in concurrent write")
-	// 		}
-	// 	}
-	// */
-	//
-	// text = "delete input2.txt\r\n"
-	// fmt.Fprintf(conn, text)
-	// message, _ = bufio.NewReader(conn).ReadString('\n')
-	//
-}
-
-// Client which performs read and write in parellel with itself
-func clients(wg *sync.WaitGroup, t *testing.T) {
-	conn, _ := net.Dial("tcp", "localhost:8080")
-	defer conn.Close()
-
-	//checkError(err)
-	reader := bufio.NewReader(conn)
-	_, _ = conn.Write([]byte("write input2.txt 5\r\n"))
-	_, _ = conn.Write([]byte("!#bin\r\n"))
-	line, _ := reader.ReadBytes('\n')
-
-	var str_temp string = string(line)
-	if len(str_temp) < 2 || str_temp[:2] != "OK" {
-		t.Error(str_temp)
+	for i := 0; i < parallel_writes_count; i++ {
+		go conc_writes(t, &wait_ch, &wait_ch2, conn)
+	}
+	for i := 0; i < parallel_writes_count; i++ {
+		wait_ch <- 1
+	}
+	for i := 0; i < parallel_writes_count; i++ {
+		<-wait_ch2
 	}
 
-	wg.Done()
-	//fmt.Println("Done single Write")
+	// checking version number increment(must be parallel_writes_count + 1)
+	contents = "byebye"
+	fmt.Fprintf(conn, "write %v %v %v\r\n%v\r\n", "input.txt", len(contents), 1, contents)
+	scanner.Scan()                 // read first line
+	resp = scanner.Text()          // extract the text from the buffer
+	arr = strings.Split(resp, " ") // split into OK and <version>
+	expect(t, arr[0], "OK")
+	_, err = strconv.Atoi(arr[1]) // parse version as number
+	if err != nil {
+		t.Error("Non-numeric version found")
+	}
+	// version := int64(ver)
+	expect(t, arr[1], strconv.Itoa(parallel_writes_count+1))
+
+	// waiting for the previous write to expire
+	time.Sleep(2 * time.Second)
+
+	// trying to read a non-existent file
+	text = "read input.txt\r\n"
+	fmt.Fprintf(conn, text)
+	scanner.Scan()                 // read first line
+	resp = scanner.Text()          // extract the text from the buffer
+	arr = strings.Split(resp, " ") // split into OK and <version>
+	expect(t, arr[0], "ERR_FILE_NOT_FOUND")
+
+	// Leader shutdown and replication check
+	var ldr *RaftNode
+	for {
+		ldr = getLeader(rafts)
+		if ldr != nil {
+			break
+		}
+	}
+	ldr.ShutDown()
+
+	time.Sleep(5 * time.Second)
+
+	for {
+		ldr = getLeader(rafts)
+		if ldr != nil {
+			break
+		}
+	}
+
+	// after new leader election, old file can still be found
+	fmt.Fprintf(conn, "read %v\r\n", "dummy.txt")
+	scanner.Scan() // read first line
+	// resp = scanner2.Text() // extract the text from the buffer
+	// fmt.Println(resp, ldr.LeaderId(), ldr.Id())
+	// arr = strings.Split(resp, " ") // split into OK and <version>
+	// expect(t, arr[1], "1")
+	// expect(t, arr[2], "5")
+	// scanner.Scan()
+
+	// after new leader election, non-existent file can still not be found
+	fmt.Fprintf(conn, "read %v\r\n", name)
+	scanner.Scan() // read first line
+	// resp = scanner2.Text() // extract the text from the buffer
+	// expect(t, resp, "ERR_FILE_NOT_FOUND")
+
+}
+
+func TestConcurrency(t *testing.T) {
+	// // making concurrent writes
+	// parallel_writes_count := 500
+	//
+	// wait_ch := make(chan int, parallel_writes_count)
+	// wait_ch2 := make(chan int, parallel_writes_count)
+	//
+	// for i := 0; i < parallel_writes_count; i++ {
+	// 	go conc_writes(t, &wait_ch, &wait_ch2, conn)
+	// }
+	// for i := 0; i < parallel_writes_count; i++ {
+	// 	wait_ch <- 1
+	// }
+	// for i := 0; i < parallel_writes_count; i++ {
+	// 	<-wait_ch2
+	// }
+	//
+	// // checking version number increment(must be parallel_writes_count + 1)
+	// contents = "byebye"
+	// fmt.Fprintf(conn, "write %v %v %v\r\n%v\r\n", "input.txt", len(contents), 1, contents)
+	// scanner.Scan()                 // read first line
+	// resp = scanner.Text()          // extract the text from the buffer
+	// arr = strings.Split(resp, " ") // split into OK and <version>
+	// expect(t, arr[0], "OK")
+	// _, err = strconv.Atoi(arr[1]) // parse version as number
+	// if err != nil {
+	// 	t.Error("Non-numeric version found")
+	// }
+	// // version := int64(ver)
+	// expect(t, arr[1], strconv.Itoa(parallel_writes_count+1))
+	//
+	// // waiting for the previous write to expire
+	// time.Sleep(2 * time.Second)
+	//
+	// // trying to read a non-existent file
+	// text = "read input.txt\r\n"
+	// fmt.Fprintf(conn, text)
+	// scanner.Scan()                 // read first line
+	// resp = scanner.Text()          // extract the text from the buffer
+	// arr = strings.Split(resp, " ") // split into OK and <version>
+	// expect(t, arr[0], "ERR_FILE_NOT_FOUND")
+
+}
+
+func conc_writes(t *testing.T, wait_ch *chan int, wait_ch2 *chan int, conn net.Conn) {
+	text := "write input.txt 4 3000\r\nThis\r\n"
+	<-(*wait_ch)
+	fmt.Fprintf(conn, text)
+	scanner := bufio.NewScanner(conn)
+	scanner.Scan()
+	resp := scanner.Text()
+	arr := strings.Split(resp, " ") // split into OK and <version>
+	expect(t, arr[0], "OK")
+	_, err := strconv.Atoi(arr[1]) // parse version as number
+	if err != nil {
+		t.Error("Non-numeric version found")
+	}
+	*wait_ch2 <- 1
 }
 
 // Useful testing function
 func expect(t *testing.T, a string, b string) {
 	if a != b {
-		t.Error(fmt.Sprintf("Expected %v, found %v", b, a)) // t.Error is visible when running `go test -verbose`
+		t.Error(fmt.Sprintf("Expected %v, found %v", b, a))
 	}
 }
